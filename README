@@ -1,0 +1,29 @@
+OpenBRAS is an open-source program made by Branimir Rajtar (branimir.rajtar@gmail.com).
+
+It's purpose is to give an open-source implementation of a Broadband Residential Access Server to the community. Currently, it's acting as a regular PPPoE server and it will be enhanced in the future, by adding support for new functionalities, as listed below.
+
+Usage:
+- connect customers on one Ethernet interface and a link to the Internet on the other interface
+- change parameters in openbras.conf accordingly
+- run "make" in Linux command prompt
+- run "sudo ./openbras [CONFIGURATION FILE]" and enter sudo password
+
+Future work, by priority:
+1. Create subscriber database in MySQL; it will also enable
+	user authentication (currently, no authentication is implemented)
+	CHAP (currently, only PAP is allowed)
+	user accounting
+	redundancy upon program restart
+2. Program optimizations
+	enable running as a service
+	fix memory leaks
+	implement LCP Protocol-Reject
+	add additional IPCP options (currently, only IP address and Primary DNS are implemented)
+3. RADIUS authentication and accounting
+4. Multiple subscriber- and Internet-facing interface (currently, only one for Internet and one for subscribers are enabled)
+5. VLAN tagging
+6. Performance optimization
+	kernel module
+	separate threads for packet processing
+7. IPv6
+8. ACLs, rate limiting, NAT, L2TP, RPF check, etc.
