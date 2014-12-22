@@ -8,7 +8,7 @@ all: $(TARGET)
 
 $(TARGET):
 	@rm -f $(BUILD_DIR)/*.o ; mkdir -p ${BUILD_DIR} ; cd $(SRC_DIR) ; make ; cd ..
-	$(C) -o $(TARGET) $(BUILD_DIR)/*.o -pthread -lrt -lm
+	$(C) -o $(TARGET) $(BUILD_DIR)/*.o -pthread -lrt -lm `mysql_config --cflags --libs`
 
 clean:
 	rm -f $(BUILD_DIR)/*.o
