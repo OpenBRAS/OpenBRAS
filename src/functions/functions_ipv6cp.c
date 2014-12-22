@@ -115,6 +115,9 @@ RESPONSE SendIPV6CPTerminateAck(ETHERNET_PACKET *ethPacket, int bytesReceived) {
                 position++;
         }
 
+	// Before sending Terminate-Request, remove subscriber from database
+        RemoveSubscriber(ethPacket->sourceMAC);
+
         response.length = position;
         return response;
 }
@@ -161,6 +164,9 @@ RESPONSE SendIPv6CPTerminateRequest(ETHERNET_PACKET *ethPacket, int bytesReceive
         // Add length
         response.packet[position] = 0x00; position++;
         response.packet[position] = 0x04; position++;
+
+	// Before sending Terminate-Request, remove subscriber from database
+        RemoveSubscriber(ethPacket->sourceMAC);
 
 	response.length = position;
         return response;

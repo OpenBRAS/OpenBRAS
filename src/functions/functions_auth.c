@@ -66,6 +66,7 @@ RESPONSE ParseIncoming_Authentication(char packet[PACKET_LENGTH], int bytesRecei
 RESPONSE ParsePAPAuthenticateRequest(ETHERNET_PACKET *ethPacket, int bytesReceived) {
 
 	int i, j = 0, position, auth_ok = 0;
+	LONG_MAC mac;
 	BYTE peer_id_length, passwd_length;
 	BYTE *peer_id_username = malloc(MAX_AUTH_LENGTH);
 	BYTE *peer_id_password = malloc(MAX_AUTH_LENGTH);
@@ -79,6 +80,9 @@ RESPONSE ParsePAPAuthenticateRequest(ETHERNET_PACKET *ethPacket, int bytesReceiv
         response.packet = malloc(PACKET_LENGTH);
         bzero(response.packet, PACKET_LENGTH);
 
+	// Get customer MAC address
+	mac = ((LONG_MAC) ntohs(ethPacket->sourceMAC[0]) << 32) | ((LONG_MAC) ntohs(ethPacket->sourceMAC[1]) << 16) | ((LONG_MAC) ntohs(ethPacket->sourceMAC[2]));
+	
 	// Get Peer-ID
 	peer_id_length = session->options[0];
 	for (i = 0; i < peer_id_length; i++) {
@@ -92,7 +96,8 @@ RESPONSE ParsePAPAuthenticateRequest(ETHERNET_PACKET *ethPacket, int bytesReceiv
 		peer_id_password[i] = session->options[i + j + 1];
 	}
 
-	auth_ok = 1;
+	// Check for the password in the database
+	auth_ok = CheckSubscriberPassword(peer_id_username, peer_id_password, mac);
 
 	// Create reply packet
         position = 0;

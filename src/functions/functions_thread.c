@@ -21,17 +21,19 @@ along with OpenBRAS. If not, see <http://www.gnu.org/licenses/>.
 #include "variables.h"
 #include "functions_tree.h"
 #include "functions_general.h"
+#include "functions_lcp.h"
 
 // Struct received from calling thread
 typedef struct {
-        unsigned long mac;
+        LONG_MAC mac;
         int rawSocket;
 } THREAD_ARGS;
 
-// Function which sends LCP Terminate-Request
+// Function which sends LCP Terminate-Request and removes user from database
 void SendLCPTerminateRequest(SUBSCRIBER *subscriber, int rawSocket, BYTE *mac) {
 
         int i, j, position = 0;
+	LONG_MAC longMAC;
         BYTE *packet = malloc(PACKET_LENGTH);
 
         // Create Terminate Request
@@ -71,6 +73,10 @@ void SendLCPTerminateRequest(SUBSCRIBER *subscriber, int rawSocket, BYTE *mac) {
                 syslog(LOG_NOTICE, "Subscriber thread - Raw Send error");
                 return;
         }
+
+	// Remove subscriber from tree and update database
+	longMAC = ((LONG_MAC)packet[0] << 40) | ((LONG_MAC)packet[1] << 32) | ((LONG_MAC)packet[2] << 24) | ((LONG_MAC)packet[3] << 16) | ((LONG_MAC)packet[4] << 8) | (LONG_MAC)packet[5];
+	RemoveSubscriber_LongMAC(longMAC);	
 
         free(packet);
 }

@@ -24,15 +24,16 @@ along with OpenBRAS. If not, see <http://www.gnu.org/licenses/>.
 #include "functions_ppp.h"
 #include "functions_lcp.h"
 #include "functions_tree.h"
+#include "functions_mysql.h"
 
 // Function which sets the Echo flag if the subscriber has replied to a Echo-Request message
 void SetSubscriberEchoFlag(ETHERNET_PACKET *ethPacket) {
 
-	unsigned long subscriberMAC;
+	LONG_MAC subscriberMAC;
 	SUBSCRIBER *sub;
 
 	// Get subscriber MAC address
-	subscriberMAC = ((unsigned long) ntohs(ethPacket->sourceMAC[0]) << 32) | ((unsigned long) ntohs(ethPacket->sourceMAC[1]) << 16) | ((unsigned long) ntohs(ethPacket->sourceMAC[2]));
+	subscriberMAC = ((LONG_MAC) ntohs(ethPacket->sourceMAC[0]) << 32) | ((unsigned long) ntohs(ethPacket->sourceMAC[1]) << 16) | ((unsigned long) ntohs(ethPacket->sourceMAC[2]));
 
 	sub = NULL;
 	sem_wait(&semaphoreTree);
@@ -45,15 +46,15 @@ void SetSubscriberEchoFlag(ETHERNET_PACKET *ethPacket) {
 	return;
 }
 
-// Function which removes the subscriber from the subscriber list
+// Function which removes the subscriber from the subscriber list and updates the database (stops session and updates subscriber state)
 void RemoveSubscriber(MAC_ADDRESS sourceMAC) {
 
 	pthread_t i;
-	unsigned long mac = 0;
+	LONG_MAC mac = 0;
 	SUBSCRIBER *sub;
 
-	mac = ((unsigned long) ntohs(sourceMAC[0]) << 32) | ((unsigned long) ntohs(sourceMAC[1]) << 16) | ((unsigned long) ntohs(sourceMAC[2]));
-
+	mac = ((LONG_MAC) ntohs(sourceMAC[0]) << 32) | ((LONG_MAC) ntohs(sourceMAC[1]) << 16) | ((LONG_MAC) ntohs(sourceMAC[2]));
+	
 	// Stop subscriber thread
         sub = NULL;
 	sem_wait(&semaphoreTree);
@@ -66,12 +67,35 @@ void RemoveSubscriber(MAC_ADDRESS sourceMAC) {
 	pthread_cancel(sub->subscriberThread);
 	pthread_join(sub->subscriberThread, NULL);
 
+	// Update number of sent and received bytes
+	UpdateSentReceived(mac);
+	// Stop session in database
+	DeactivateSession(mac);
+	// Change subscriber state
+	SetSubscriberStateMAC(mac, "CLOSED");
+
 	// Remove subscriber from binary tree
 	sem_wait(&semaphoreTree);
         DeleteSubscriber(&subscriberList, mac);
         sem_post(&semaphoreTree);	
+}
 
-	PrintSubscribers(subscriberList);
+// Function which removes the subscriber from the subscriber list and updates the database (stops session and updates subscriber state); incoming argument is MAC address in integer form; it will be called from the subscriber thread only
+void RemoveSubscriber_LongMAC(LONG_MAC mac) {
+
+	pthread_t i;
+	
+	// Update number of sent and received bytes
+	UpdateSentReceived(mac);
+	// Stop session in database
+	DeactivateSession(mac);
+	// Change subscriber state
+	SetSubscriberStateMAC(mac, "CLOSED");
+	
+	// Remove subscriber from binary tree
+	sem_wait(&semaphoreTree);
+        DeleteSubscriber(&subscriberList, mac);
+        sem_post(&semaphoreTree);	
 }
 
 // Function which parses incoming LCP packets
@@ -110,14 +134,11 @@ RESPONSE ParseIncoming_LCP(char packet[PACKET_LENGTH], int bytesReceived) {
 		
 		case TERM_REQ: 	// Terminate-Request has been received, remove subscriber from binary tree and respond with Terminate-Ack
 			
-				RemoveSubscriber(ethPacket->sourceMAC);
-
 				return SendTerminateAck(ethPacket, bytesReceived);
 				break;
 
-		case TERM_ACK: 	// If Terminate_Ack has been received, remove subscriber from binary tree and don't send any response
-
-				RemoveSubscriber(ethPacket->sourceMAC);
+		case TERM_ACK: 	// If Terminate-Ack has been received, do nothing
+				// Subscriber has been removed from binary tree when Terminate-Request is sent
 
 				response.length = 0;
 				return response;
@@ -552,6 +573,9 @@ RESPONSE SendTerminateRequest(ETHERNET_PACKET *ethPacket, int bytesReceived) {
         // Add length
 	Append(response.packet, position, "\x00\x04", 2); position += 2;
 
+	// Before sending Terminate-Request, remove subscriber from database
+	RemoveSubscriber(ethPacket->sourceMAC);
+
         response.length = position;
         return response;
 }
@@ -601,6 +625,9 @@ RESPONSE SendTerminateAck(ETHERNET_PACKET *ethPacket, int bytesReceived) {
 		response.packet[position] = session->options[i];
 		position++;
 	}
+
+	// Before sending Terminate-Ack, remove subscriber from database
+	RemoveSubscriber(ethPacket->sourceMAC);
 
 	response.length = position;
         return response;

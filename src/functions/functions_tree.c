@@ -21,7 +21,7 @@ along with OpenBRAS. If not, see <http://www.gnu.org/licenses/>.
 #include "variables.h"
 
 // Function which searches the tree for the node to be deleted
-void SearchTree(SUBSCRIBER **root, unsigned long mac, SUBSCRIBER **parent, SUBSCRIBER **tmp)
+void SearchTree(SUBSCRIBER **root, LONG_MAC mac, SUBSCRIBER **parent, SUBSCRIBER **tmp)
 {
 	SUBSCRIBER *tmp2;
 	tmp2 = *root ;
@@ -44,7 +44,7 @@ void SearchTree(SUBSCRIBER **root, unsigned long mac, SUBSCRIBER **parent, SUBSC
 }
 
 // Function which adds a subscriber to the tree
-void AddSubscriber(SUBSCRIBER **tree, unsigned long mac, MAC_ADDRESS mac_array, IP_ADDRESS ip, unsigned short session_id) {
+void AddSubscriber(SUBSCRIBER **tree, LONG_MAC mac, MAC_ADDRESS mac_array, IP_ADDRESS ip, unsigned short session_id) {
 	
 	// If the location of the new node is found, add new subscriber to bottom of tree
 	if ((*tree) == NULL) {
@@ -60,6 +60,8 @@ void AddSubscriber(SUBSCRIBER **tree, unsigned long mac, MAC_ADDRESS mac_array, 
 		(*tree)->ip = ip;
 		(*tree)->session_id = session_id;
 		(*tree)->echoReceived = FALSE;
+		(*tree)->bytesSent = 0;
+		(*tree)->bytesReceived = 0;
 	}
 
 	// Otherwise, search the tree
@@ -84,7 +86,7 @@ void PrintSubscribers(SUBSCRIBER *tree) {
 
 // Function which searches a subscriber with a given MAC address
 // returns: found SUBSCRIBER
-SUBSCRIBER *FindSubscriberMAC(SUBSCRIBER **tree, unsigned long mac) {
+SUBSCRIBER *FindSubscriberMAC(SUBSCRIBER **tree, LONG_MAC mac) {
 
 	// Recursively find subscriber in tree
 	if ((*tree) == NULL) return NULL;
@@ -127,7 +129,7 @@ SUBSCRIBER *FindSubscriberIP(SUBSCRIBER **tree, IP_ADDRESS ip) {
 }
 
 // Function which sets the threadID of the subscriber's thread
-void SetSubscriberThreadID(SUBSCRIBER **tree, unsigned long mac, pthread_t threadID) {
+void SetSubscriberThreadID(SUBSCRIBER **tree, LONG_MAC mac, pthread_t threadID) {
 
         // Recursively find subscriber in tree
 	if ((*tree) == NULL) return;
@@ -143,7 +145,7 @@ void SetSubscriberThreadID(SUBSCRIBER **tree, unsigned long mac, pthread_t threa
 }
 
 // Function which deletes subscriber from the tree
-void DeleteSubscriber(SUBSCRIBER **tree, unsigned long mac) {
+void DeleteSubscriber(SUBSCRIBER **tree, LONG_MAC mac) {
 	
     	SUBSCRIBER *parent, *tmp, *tmpsucc;
 

@@ -10,5 +10,6 @@ RESPONSE ParseConfigureRequest(ETHERNET_PACKET *ethPacket, int bytesReceived);
 RESPONSE SendCodeReject(ETHERNET_PACKET *ethPacket, int bytesReceived);
 RESPONSE ParseConfigureNak(ETHERNET_PACKET *ethPacket, int bytesReceived);
 RESPONSE SendConfigureRequest(RESPONSE response);
+void RemoveSubscriber_LongMAC(LONG_MAC mac);
 
 #endif

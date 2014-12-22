@@ -48,6 +48,12 @@ void SetExternVariables(FILE *fd) {
 	extern int authPort;
 	extern int accPort;
 
+	extern char db_machine[MAX_ARGUMENT_LENGTH];
+	extern char db_username[MAX_ARGUMENT_LENGTH];
+	extern char db_password[MAX_ARGUMENT_LENGTH];
+	extern char db_name[MAX_ARGUMENT_LENGTH];
+	extern unsigned short db_port;
+
 	gethostname(AC_Name, MAX_ARGUMENT_LENGTH);
 	MRU = 1492;
 	echoInterval = 30;
@@ -62,6 +68,12 @@ void SetExternVariables(FILE *fd) {
 	strcpy(IPv6, "no");
 	authPort = 1812;
 	accPort = 1813;
+
+	strcpy(db_machine, "localhost");
+	strcpy(db_username, "admin");
+	strcpy(db_password, "admin");
+	strcpy(db_name, "OpenBRAS");
+	db_port = 0;
 
 	param_num = ParseConfigurationFile(fd, configuration);
 
@@ -87,6 +99,12 @@ void SetExternVariables(FILE *fd) {
 		if (strcmp(configuration[i].parameter, "Radius_secondary") == 0) strcpy(Radius_secondary, configuration[i].value);
 		if (strcmp(configuration[i].parameter, "Authentication_port") == 0) authPort = atoi(configuration[i].value);
 		if (strcmp(configuration[i].parameter, "Accounting_port") == 0) accPort = atoi(configuration[i].value);
+
+		if (strcmp(configuration[i].parameter, "Hostname") == 0) strcpy(db_machine, configuration[i].value);
+		if (strcmp(configuration[i].parameter, "Username") == 0) strcpy(db_username, configuration[i].value);
+		if (strcmp(configuration[i].parameter, "Password") == 0) strcpy(db_password, configuration[i].value);
+		if (strcmp(configuration[i].parameter, "Database_name") == 0) strcpy(db_name, configuration[i].value);
+		if (strcmp(configuration[i].parameter, "SQL_port") == 0) db_port = atoi(configuration[i].value);
 	}
 }
 

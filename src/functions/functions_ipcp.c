@@ -26,11 +26,11 @@ along with OpenBRAS. If not, see <http://www.gnu.org/licenses/>.
 #include "functions_ipcp.h"
 #include "functions_tree.h"
 
-// Function which adds a new subscriber to the subscriber list
+// Function which adds a new subscriber to the subscriber list and new session to the database
 void AddNewSubscriber(ETHERNET_PACKET *ethPacket, int bytesReceived) {
 
 	int i, j;
-	unsigned long mac = 0;
+	LONG_MAC mac = 0;
 	MAC_ADDRESS mac_array;
 	IP_ADDRESS ip = 0;
 
@@ -38,8 +38,8 @@ void AddNewSubscriber(ETHERNET_PACKET *ethPacket, int bytesReceived) {
 	PPP_OPTION option;
 	memcpy(session, ethPacket->payload, bytesReceived - ETH_HEADER_LENGTH);
 
-	// Get the subscriber MAC address in unsigned long format
-	mac = ((unsigned long) ntohs(ethPacket->sourceMAC[0]) << 32) | ((unsigned long) ntohs(ethPacket->sourceMAC[1]) << 16) | ((unsigned long) ntohs(ethPacket->sourceMAC[2]));
+	// Get the subscriber MAC address in LONG_MAC format
+	mac = ((LONG_MAC) ntohs(ethPacket->sourceMAC[0]) << 32) | ((LONG_MAC) ntohs(ethPacket->sourceMAC[1]) << 16) | ((LONG_MAC) ntohs(ethPacket->sourceMAC[2]));
 
 	// Get MAC address in array format
 	for (i = 0; i < 3; i++) mac_array[i] = ethPacket->sourceMAC[i];
@@ -68,9 +68,15 @@ void AddNewSubscriber(ETHERNET_PACKET *ethPacket, int bytesReceived) {
 
 	if ( (ip == 0) || (mac == 0) ) return;
 
+	// Add subscriber to binary tree
 	sem_wait(&semaphoreTree);
 	AddSubscriber(&subscriberList, mac, mac_array, ip, session->session_id);
 	sem_post(&semaphoreTree);
+
+	// Change subscriber state
+	SetSubscriberStateMAC(mac, "ACTIVE");
+	// Create new subscriber session in database
+	CreateNewSession(mac, ip, session->session_id);
 }
 
 // Functions which checks which IP address is available

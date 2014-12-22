@@ -1,22 +1,3 @@
-/*
-Copyright (C) 2014 Branimir Rajtar
-
-This file is part of OpenBRAS.
-
-OpenBRAS is free software; you can redistribute it and/or
-modify it under the terms of the GNU General Public License
-as published by the Free Software Foundation; either version 2
-of the License, or (at your option) any later version.
-
-OpenBRAS is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with OpenBRAS. If not, see <http://www.gnu.org/licenses/>.
-*/
-
 #include "headers.h"
 #include "variables.h"
 #include "functions_general.h"
@@ -27,12 +8,11 @@ along with OpenBRAS. If not, see <http://www.gnu.org/licenses/>.
 #include "functions_ipv6cp.h"
 #include "functions_tree.h"
 #include "functions_thread.h"
-#include "functions_mysql.h"
 
 // Declaration of thread for listening of incoming packets and the structure for passing thread arguments
 void *ParseIncomingPackets(void *args);
 typedef struct {
-	LONG_MAC mac;
+	unsigned long mac;
         int rawSocket;
 } THREAD_ARGS;
 
@@ -48,7 +28,7 @@ int main(int argc, char **argv)
 	struct sockaddr_in sin;
 	struct ifreq if_mac;
         BYTE *mac;
-	LONG_MAC subscriberMAC;
+	unsigned long subscriberMAC;
 	SUBSCRIBER *sub;
 	FILE *fd;
 	pthread_t internetPackets, tmpThread;
@@ -56,17 +36,14 @@ int main(int argc, char **argv)
 
 	sub = malloc(sizeof(SUBSCRIBER));
 
-	// Open syslog for error logging
-	openlog("openvbras", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_USER);
-
 	// The list of subscribers is empty at the beginning
 	subscriberList = NULL;
 
 	// Read configuration file
-	if (argc < 2) fd = fopen("openbras.conf", "r");
+	if (argc < 2) fd = fopen("vbras.conf", "r");
         else if (argc == 2) fd = fopen(argv[1], "r");
         else {
-                perror("Usage: sudo ./openbras [CONFIGURATION_FILE]\n");
+                perror("Usage: sudo ./vbras [CONFIGURATION_FILE]\n");
                 return -1;
         }
 	if (fd == NULL) {
@@ -74,9 +51,6 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	SetExternVariables(fd);
-
-	// Connect to database
-	if (ConnectToDatabase()) return -1;
 
 	// Create and bind a raw socket to the subscriber-facing interface
 	if ((rawSocket = BindRawSocket(subscriberInterface)) == -1) return -1;
@@ -99,35 +73,35 @@ int main(int argc, char **argv)
 	// Initiate semaphores
 	sem_init(&semaphoreTree, 0, 1);
 
-	// Log start of program
-	syslog(LOG_INFO, "Program started");
-	syslog(LOG_INFO, "Listening for subscribers on %s", subscriberInterface);
+        printf("\nvbras: Slusam na %s i cekam PPPoE pakete\n", subscriberInterface);
 
 	// Listen to all incoming packets
 	while(1) {
 
 		bytesReceived = recvfrom(rawSocket, &packet, PACKET_LENGTH, 0, NULL, NULL);
 		if (bytesReceived == -1) {
-			syslog(LOG_NOTICE, "No packets received from subscriber");
-			continue;
+			perror("No packets received");
+			return -1;
 		}
 
 		// Find relevant fields for if-else tree, the packet ethernet type and ppp protocol
-		ethtype = (packet[12] << 8) | packet[13];
+		ethtype = packet[12] * 256 + packet[13];
 		
 		// Discard packets with non-relevant ethtypes
 		if ( (!(ethtype ^ ETH_P_PPP_SES)) & (!(ethtype ^ ETH_P_PPP_DISC)) ) continue;
 
-		pppProto = (packet[20] << 8) | packet[21];
+		pppProto = packet[20] * 256 + packet[21];
 
-		// If incoming packet is regular PPPoE traffic, verify the source MAC address and forward to the Internet
-		// Regular PPPoE traffic == ethernet type 0x8864 and PPP protocol type IPv4
+		//TODO IPv6, izbaceno je "| (!(pppProto ^ 0x0057)" iz IF-a ispod
+
+		// If incoming packet is regular PPPoE traffic, verify the source MAC address and forward
+		// Regular PPPoE traffic == ethernet type 0x8864 and PPP protocol type IPv4 or IPv6
 		if ( (!(ethtype ^ ETH_P_PPP_SES)) & (!(pppProto ^ 0x0021)) ) {
 			
-			sourceMAC[0] = packet[6] + (packet[7] << 8);
-			sourceMAC[1] = packet[8] + (packet[9] << 8);
-			sourceMAC[2] = packet[10] + (packet[11] << 8);
-			subscriberMAC = ((LONG_MAC) ntohs(sourceMAC[0]) << 32) | ((LONG_MAC) ntohs(sourceMAC[1]) << 16) | ((LONG_MAC) ntohs(sourceMAC[2]));
+			sourceMAC[0] = packet[6] + packet[7] * 256;
+			sourceMAC[1] = packet[8] + packet[9] * 256;
+			sourceMAC[2] = packet[10] + packet[11] * 256;
+			subscriberMAC = ((unsigned long) ntohs(sourceMAC[0]) << 32) | ((unsigned long) ntohs(sourceMAC[1]) << 16) | ((unsigned long) ntohs(sourceMAC[2]));
 			
 			// If the source MAC address doesn't belong to a registered subscriber, discard the packet implicitly
 			sub = NULL;
@@ -141,23 +115,26 @@ int main(int argc, char **argv)
                         for (i = 0; i < tmp; i++)
                                 packet_ip[i] = packet[i + ETH_HEADER_LENGTH + PPPoE_HEADER_LENGTH + PPP_HEADER_LENGTH];
 
-			// Send packet to the destination IP address, i.e. towards the Internet	and update database
+			// Send packet to the destination IP address, i.e. towards the Internet	
+			//sin.sin_addr.s_addr = packet_ip[16] * 16777216 + packet_ip[17] * 65536 + packet_ip[18] * 256 + packet_ip[19];
 			sin.sin_addr.s_addr = (packet_ip[16] << 24) | (packet_ip[17] << 16) | (packet_ip[18] << 8) | packet_ip[19];
 			if (sendto(ipSocket, packet_ip, tmp - 4, 0, (struct sockaddr *) &sin, sizeof (struct sockaddr)) < 0)  {
-    				syslog(LOG_NOTICE, "Sending of packet to the Internet failed");
+    				perror("vbras: IP packet sending failed");
     				continue;
   			}
-			// Update sent bytes number
-			sub->bytesSent += (tmp -4);
 
 			continue;
 		}
 
+		//TODO maknuti ovo ispod kad bude IPv6 implementirano
+		else if ( (!(ethtype ^ ETH_P_PPP_SES)) & (!(pppProto ^ 0x0057)) ) continue;
+		//TODO maknuti ovo iznad
+
 		// If the ethertype is PPPoE, but not regular traffic, parse on the control plane
-		
-		// Parse control plane packets with PPPoE Discover Ethertype
+		// Parse control plane packets with Discover Ethertype
 		else if (!(ethtype ^ ETH_P_PPP_DISC)) {
                         
+			// Parse Discover packet
                         response = ParseIncoming_Discover(packet, bytesReceived);
                         if (response.length == 0) continue;                     
                         
@@ -168,19 +145,21 @@ int main(int argc, char **argv)
                 
 			// Send response to Discover
                         if ((sendto(rawSocket, response.packet, response.length, 0, NULL, sizeof(struct sockaddr_ll))) == -1) {
-                                syslog(LOG_NOTICE, "Error sending response to PPPoE discover message");
+                                perror("Raw Send error - Discover response");
+                                return -1;
                         }
 
                         continue; 
                 }
 
-		// Parse control plane packets with PPPoE Session Ethertype
+		// Parse control plane packets with Session Ethertype
 		else if (!(ethtype ^ ETH_P_PPP_SES)) {
                         
                         response = ParseIncoming_Session(packet, bytesReceived);
                         if (response.length == 0) continue;             
 
-                        // If LCP Configure-Ack has been sent, send LCP Configure-Request
+                        //TODO brojevi bajtova ne smiju biti hardkodirani ovo u if uvjetu !!!!!!
+                        // If Configuration-Ack has been sent, send Configuration request
                         if ( (response.packet[20] == 0xc0) && (response.packet[21] == 0x21) && (response.packet[22] == 0x02) ) {
                                 
 				response_additional = SendConfigureRequest(response);
@@ -190,12 +169,11 @@ int main(int argc, char **argv)
                                         response_additional.packet[i] = mac[j];            
                                 }
                                 if ((sendto(rawSocket, response_additional.packet, response_additional.length, 0, NULL, sizeof(struct sockaddr_ll))) == -1) {
-                                	syslog(LOG_NOTICE, "Error sending response to PPPoE Session message");
-					continue;
+                                        perror("Raw Send error - Session response");
+                                        return -1;
                                 } 
                         }
-
-			// If IPCP Configure-Ack has been sent, send IPCP Configure-Request and start new customer thread
+			// If IPCP Ack has been sent, send IPCP ConfigurationRequest and start new customer thread
                         if ( (response.packet[20] == 0x80) && (response.packet[21] == 0x21) && (response.packet[22] == 0x02) ) {
                                 	
 				response_additional = SendIPCPConfigureRequest(response);
@@ -205,28 +183,49 @@ int main(int argc, char **argv)
                                 	response_additional.packet[i] = mac[j];            
                                 }
                                 if ((sendto(rawSocket, response_additional.packet, response_additional.length, 0, NULL, sizeof(struct sockaddr_ll))) == -1) {
-                                	syslog(LOG_NOTICE, "Error sending response to PPPoE Session message");
-					continue;
+                                	perror("Raw Send error - Session response");
+                                        return -1;
                                 }
 
-				// Start customer thread with customer MAC address and raw socket as arguments
+				// Start customer thread
 				memset(&threadArgs, 0, sizeof(THREAD_ARGS));
-				threadArgs.mac = ((LONG_MAC)response.packet[0] << 40) | ((LONG_MAC)response.packet[1] << 32) | ((LONG_MAC)response.packet[2] << 24) | ((LONG_MAC)response.packet[3] << 16) | ((LONG_MAC)response.packet[4] << 8) | (LONG_MAC)response.packet[5];
+				threadArgs.mac = ((unsigned long)response.packet[0] << 40) | ((unsigned long)response.packet[1] << 32) | ((unsigned long)response.packet[2] << 24) | ((unsigned long)response.packet[3] << 16) | ((unsigned long)response.packet[4] << 8) | (unsigned long)response.packet[5];
         			threadArgs.rawSocket = rawSocket;
         			
+				printf("vbras: mac adresa korisnika cija se dretva pokrece je %lu\n", threadArgs.mac);
+				//printf("vbras: mac segmenti su 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\n", response.packet[5], response.packet[4], response.packet[3], response.packet[2], response.packet[1], response.packet[0]);
+
 				if (pthread_create(&tmpThread, NULL, SubscriberLCPEchoThread, &threadArgs)) {
-                			syslog(LOG_WARNING, "Subscriber thread not created");
-                			continue;
+                			perror("Subscriber thread not created");
+                			return -1;
         			}
+				//sem_wait(&semaphoreTree);
+				//SetSubscriberThreadID(&subscriberList, threadArgs.mac, *tmpThread);
+				//sem_post(&semaphoreTree);
+                        }       
+			// If IPCPV6 Ack has been sent, send IPCPV6 ConfigurationRequest
+                        if ( (response.packet[20] == 0x80) && (response.packet[21] == 0x57) && (response.packet[22] == 0x02) ) {
+                                	
+					response_additional = SendIPV6CPConfigureRequest(response);
+                                        
+                                        // Set source MAC address (subscriber-facing interface)
+                                        for (i = 6, j = 0; i < 12; i++, j++) {
+                                                response_additional.packet[i] = mac[j];            
+                                        }
+                                        if ((sendto(rawSocket, response_additional.packet, response_additional.length, 0, NULL, sizeof(struct sockaddr_ll))) == -1) {
+                                                perror("Raw Send error - Session response");
+                                                return -1;
+                                } 
                         }
-       
+
 			// Set source MAC address (subscriber-facing interface)
                         for (i = 6, j = 0; i < 12; i++, j++) {
                                 response.packet[i] = mac[j];            
                         }
                 
                         if ((sendto(rawSocket, response.packet, response.length, 0, NULL, sizeof(struct sockaddr_ll))) == -1) {
-                		syslog(LOG_WARNING, "Subscriber thread not created");
+                                perror("Raw Send error - Session response");
+                                return -1;
                         } 
 
                         continue;
@@ -241,18 +240,15 @@ int main(int argc, char **argv)
 	close(rawSocket);
 	close(ipSocket);
 
-	// Close syslog
-	closelog();
-
 	// Finish thread
         if (pthread_join(internetPackets, NULL)) {
-                syslog(LOG_NOTICE, "Thread not joined");
+                perror("Thread not joined");
+                return -1;
         }
 
 	return 0;
 }
 
-// Function to receive packets from the Internet and forward them to the subscribers
 void *ParseIncomingPackets(void *args) {
 	
 	int i, j, rawSocketInternet, bytesReceived;
@@ -267,38 +263,43 @@ void *ParseIncomingPackets(void *args) {
         forwarding = malloc(PACKET_LENGTH);
 	sub = malloc(sizeof(SUBSCRIBER));
 
-	// Get MAC address of the subscriber-facing interface
+	// Get MAC address of interface
         if ((mac = GetMACAddress(subscriberInterface, threadArgs->rawSocket)) == NULL) return;
 
 	// Create and bind a raw socket to the Internet-facing interface
         if ((rawSocketInternet = BindRawSocket(outgoingInterface)) == -1) return;
 
-	// Log start of thread
-	syslog(LOG_INFO, "Listening for incoming packets on %s", outgoingInterface);
+	printf("vbras: Dretva slusa za pakete na %s\n", outgoingInterface);
 
 	// Listen to all incoming packets
         while(1) {
 
 		bytesReceived = recvfrom(rawSocketInternet, &packet, PACKET_LENGTH, 0, NULL, NULL);
                 if (bytesReceived == -1) {
-			syslog(LOG_NOTICE, "No packets received from the Internet");
-			continue;
+                        perror("No packets received");
+                        return;
                 }
 
 		// Discard non-IPv4 packets
-		ethtype = (packet[12] << 8) | packet[13];
+		//TODO omoguciti i za IPv6
+		ethtype = packet[12] * 256 + packet[13];
 		if (ethtype != 0x0800) continue;
 
 		// If the customer with the destination IP doesn't exist in the subscriber list, discard the packet implicitly 
 		sub = NULL;
+		//destinationIP = packet[30] * 16777216 + packet[31] * 65536 + packet[32] * 256 + packet[33];
 		destinationIP = (packet[30] << 24) | (packet[31] << 16) | (packet[32] << 8) | packet[33];
+		//printf("vbras: destinationIP je %u\n", destinationIP);
 	
+		// Lock search in the binary tree with semaphores
 		sem_wait(&semaphoreTree);
 		sub = FindSubscriberIP(&subscriberList, destinationIP);
 		sem_post(&semaphoreTree);
+			
 		if (sub == NULL) continue;
+		//printf("primio s Interneta %d\n", bytesReceived);
 	
-		// Create packet to send to subscriber, i.e. embed incoming packet in PPPoE and PPP
+		// Create packet, i.e. embed incoming packet in PPPoE and PPP
         	memset(forwarding, 0, PACKET_LENGTH);
 		// Set subscriber MAC address as destination MAC
 		for (i = 0, j = 0; i < 6; i+=2, j++) {
@@ -310,32 +311,29 @@ void *ParseIncomingPackets(void *args) {
                         forwarding[i] = mac[j];            
                 }
 		// Add PPPoE Session Ethertype
-		forwarding[12] = 0x88;
-		forwarding[13] = 0x64;
+		Append(forwarding, 12, "\x88\x64", ETHERTYPE_LENGTH);
 		// Add PPPoE header
-		forwarding[14] = 0x11;
-		forwarding[15] = 0x00;
+		Append(forwarding, 14, "\x11\x00", 2);
 		// Add PPPoE session ID
 		forwarding[16] = sub->session_id % 256;
 		forwarding[17] = sub->session_id / 256;
 		// Add PPPoE length (add 2 to length of incoming IP packet)
-		ipLength = (packet[16] << 8) + packet[17]; 
+		ipLength = packet[16] * 256 + packet[17]; 
 		forwarding[18] = (ipLength + 2) / 256;
                 forwarding[19] = (ipLength + 2) % 256;
 		// Add PPP header
-		forwarding[20] = 0x00;
-		forwarding[21] = 0x21;
+		// TODO mora biti konfigurabilno IPv4 ili IPv6
+		Append(forwarding, 20, "\x00\x21", 2);
 		// Add original IP packet
 		for (i = 22, j = ETH_HEADER_LENGTH; j < bytesReceived; i++, j++)
 			forwarding[i] = packet[j];
 
-		// Send packet to subscriber and update database
+		// Send packet to subscriber
+		//printf("saljem subscriberu %d\n", ETH_HEADER_LENGTH + PPPoE_HEADER_LENGTH + PPP_HEADER_LENGTH + ipLength);
 		if ((sendto(threadArgs->rawSocket, forwarding, ETH_HEADER_LENGTH + PPPoE_HEADER_LENGTH + PPP_HEADER_LENGTH + ipLength, 0, NULL, sizeof(struct sockaddr_ll))) == -1) {
-                        syslog(LOG_NOTICE, "Packet not sent towards the subscriber");
+                        perror("Raw Send error - encapsulated packet toward subscriber");
 			continue;
                 }
-		// Update received bytes
-		sub->bytesReceived += ipLength;
 	}
 
 	free(sub);
