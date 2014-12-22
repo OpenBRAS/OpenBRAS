@@ -89,6 +89,15 @@ char Radius_secondary[MAX_ARGUMENT_LENGTH];
 int authPort;
 int accPort;
 
+// MySQL VARIABLES
+MYSQL *con;
+char db_machine[MAX_ARGUMENT_LENGTH];
+char db_username[MAX_ARGUMENT_LENGTH];
+char db_password[MAX_ARGUMENT_LENGTH];
+char db_name[MAX_ARGUMENT_LENGTH];
+unsigned short db_port;
+
+
 // Semaphore
 sem_t semaphoreTree;
 
@@ -96,6 +105,7 @@ sem_t semaphoreTree;
 
 // MAC_ADDRESS definition
 typedef unsigned short MAC_ADDRESS[3];
+typedef unsigned long long LONG_MAC;
 
 // IP_ADDRESS definition
 typedef unsigned int IP_ADDRESS;
@@ -172,8 +182,8 @@ struct subscriber_definition {
 	unsigned short session_id;
 	pthread_t subscriberThread;
 	enum {TRUE, FALSE} echoReceived;
-	long bytesSent;
-	long bytesReceived;
+	unsigned long long bytesSent;
+	unsigned long long bytesReceived;
 
 	struct subscriber_definition *left;
 	struct subscriber_definition *right;

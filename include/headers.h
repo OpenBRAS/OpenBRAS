@@ -16,3 +16,4 @@
 #include <arpa/inet.h>
 #include <signal.h>
 #include <syslog.h>
+#include <mysql/mysql.h>
