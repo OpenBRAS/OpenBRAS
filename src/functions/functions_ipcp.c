@@ -27,7 +27,7 @@ along with OpenBRAS. If not, see <http://www.gnu.org/licenses/>.
 #include "functions_tree.h"
 
 // Function which adds a new subscriber to the subscriber list and new session to the database
-void AddNewSubscriber(ETHERNET_PACKET *ethPacket, int bytesReceived) {
+void AddNewSubscriber(ETHERNET_PACKET *ethPacket, int bytesReceived, BYTE authenticated) {
 
 	int i, j;
 	LONG_MAC mac = 0;
@@ -70,7 +70,60 @@ void AddNewSubscriber(ETHERNET_PACKET *ethPacket, int bytesReceived) {
 
 	// Add subscriber to binary tree
 	sem_wait(&semaphoreTree);
-	AddSubscriber(&subscriberList, mac, mac_array, ip, session->session_id);
+	AddSubscriber(&subscriberList, mac, mac_array, ip, session->session_id, authenticated);
+	sem_post(&semaphoreTree);
+
+	// Change subscriber state
+	SetSubscriberStateMAC(mac, "ACTIVE");
+	// Create new subscriber session in database
+	CreateNewSession(mac, ip, session->session_id);
+}
+
+// Function which updated the subscriber in list
+void UpdateNewSubscriber(ETHERNET_PACKET *ethPacket, int bytesReceived, BYTE authenticated) {
+
+	int i, j;
+	LONG_MAC mac = 0;
+	MAC_ADDRESS mac_array;
+	IP_ADDRESS ip = 0;
+
+	PPPoE_SESSION *session = malloc(bytesReceived - ETH_HEADER_LENGTH);
+	PPP_OPTION option;
+	memcpy(session, ethPacket->payload, bytesReceived - ETH_HEADER_LENGTH);
+
+	// Get the subscriber MAC address in LONG_MAC format
+	mac = ((LONG_MAC) ntohs(ethPacket->sourceMAC[0]) << 32) | ((LONG_MAC) ntohs(ethPacket->sourceMAC[1]) << 16) | ((LONG_MAC) ntohs(ethPacket->sourceMAC[2]));
+
+	// Get MAC address in array format
+	for (i = 0; i < 3; i++) mac_array[i] = ethPacket->sourceMAC[i];
+
+	// Get subscriber IP address
+	i = 0;
+        while (i < (ntohs(session->ppp_length) - 4)) {
+                // Get OPTION_TYPE
+                option.type = session->options[i];
+
+                // Get OPTION_LENGTH
+                option.length = session->options[i+1];
+
+                // Get OPTION_VALUE
+                i = i + 2;
+                j = 0;
+                bzero(option.value, MAX_OPTION_LENGTH);
+                while (j < (option.length - 2)) {
+                        option.value[j] = session->options[i];
+                        i++;
+                        j++;
+                }
+
+		if (option.type == 3) ip = (option.value[0] << 24) | (option.value[1] << 16) | (option.value[2] << 8) | option.value[3];
+	}
+
+	if ( (ip == 0) || (mac == 0) ) return;
+
+	// Add subscriber to binary tree
+	sem_wait(&semaphoreTree);
+	UpdateSubscriber(&subscriberList, mac, mac_array, ip, session->session_id, authenticated);
 	sem_post(&semaphoreTree);
 
 	// Change subscriber state
@@ -324,7 +377,10 @@ RESPONSE ParseIPCPConfigureRequest(ETHERNET_PACKET *ethPacket, int bytesReceived
 			for (j = 0; j < (option[i].length - 2); j++)
 				{ response.packet[position] = option[i].value[j]; position++; }
 		}
-		AddNewSubscriber(ethPacket, bytesReceived);
+		// if the authentication is local, add user to tree
+		if (!radiusAuth) AddNewSubscriber(ethPacket, bytesReceived, 1);
+		// Otherwise, update him
+		else UpdateNewSubscriber(ethPacket, bytesReceived, 1);
 	}
 
 	response.length = position;

@@ -15,7 +15,7 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with OpenBRAS. If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 
 #include "headers.h"
 #include "variables.h"
@@ -25,34 +25,34 @@ void SearchTree(SUBSCRIBER **root, LONG_MAC mac, SUBSCRIBER **parent, SUBSCRIBER
 {
 	SUBSCRIBER *tmp2;
 	tmp2 = *root ;
-   	*parent = NULL ;
+	*parent = NULL ;
 
-    	while (tmp2 != NULL)
-    	{
-        	// If the node to be deleted is found, return
+	while (tmp2 != NULL)
+	{
+		// If the node to be deleted is found, return
 		if (tmp2->mac == mac)
-        	{
-            		*tmp = tmp2;
-            		return;
-        	}
+		{
+			*tmp = tmp2;
+			return;
+		}
 
-        	*parent = tmp2;
+		*parent = tmp2;
 
-        	if (tmp2->mac > mac) tmp2 = tmp2->left;
-        	else tmp2 = tmp2->right;
-    	}
+		if (tmp2->mac > mac) tmp2 = tmp2->left;
+		else tmp2 = tmp2->right;
+	}
 }
 
 // Function which adds a subscriber to the tree
-void AddSubscriber(SUBSCRIBER **tree, LONG_MAC mac, MAC_ADDRESS mac_array, IP_ADDRESS ip, unsigned short session_id) {
-	
+void AddSubscriber(SUBSCRIBER **tree, LONG_MAC mac, MAC_ADDRESS mac_array, IP_ADDRESS ip, unsigned short session_id, BYTE authenticated) {
+
 	// If the location of the new node is found, add new subscriber to bottom of tree
 	if ((*tree) == NULL) {
 
 		*tree = malloc (sizeof(SUBSCRIBER));
 		(*tree)->right = NULL;
 		(*tree)->left = NULL;
-		
+
 		(*tree)->mac = mac;
 		(*tree)->mac_array[0] = mac_array[0];
 		(*tree)->mac_array[1] = mac_array[1];
@@ -62,12 +62,37 @@ void AddSubscriber(SUBSCRIBER **tree, LONG_MAC mac, MAC_ADDRESS mac_array, IP_AD
 		(*tree)->echoReceived = FALSE;
 		(*tree)->bytesSent = 0;
 		(*tree)->bytesReceived = 0;
+		(*tree)->authenticated = authenticated;
 	}
 
 	// Otherwise, search the tree
-	else if (mac < (*tree)->mac) AddSubscriber(&(*tree)->left, mac, mac_array, ip, session_id);
-	
-	else if (mac > (*tree)->mac) AddSubscriber(&(*tree)->right, mac, mac_array, ip, session_id);
+	else if (mac < (*tree)->mac) AddSubscriber(&(*tree)->left, mac, mac_array, ip, session_id, authenticated);
+
+	else if (mac > (*tree)->mac) AddSubscriber(&(*tree)->right, mac, mac_array, ip, session_id, authenticated);
+}
+
+// Function which updates the subscriber to the tree
+void UpdateSubscriber(SUBSCRIBER **tree, LONG_MAC mac, MAC_ADDRESS mac_array, IP_ADDRESS ip, unsigned short session_id, BYTE authenticated) {
+
+	// Recursively find subscriber in tree und update it
+	if ((*tree) == NULL) return;
+
+	else if (mac < (*tree)->mac) UpdateSubscriber(&((*tree)->left), mac, mac_array, ip, session_id, authenticated);
+
+	else if (mac > (*tree)->mac) UpdateSubscriber(&((*tree)->right), mac, mac_array, ip, session_id, authenticated);
+
+	else if (mac == (*tree)->mac) {
+
+		(*tree)->mac_array[0] = mac_array[0];
+		(*tree)->mac_array[1] = mac_array[1];
+		(*tree)->mac_array[2] = mac_array[2];
+		(*tree)->ip = ip;
+		(*tree)->session_id = session_id;
+		(*tree)->echoReceived = FALSE;
+		(*tree)->bytesSent = 0;
+		(*tree)->bytesReceived = 0;
+		(*tree)->authenticated = authenticated;
+	}
 }
 
 // Function which prints the binary tree, used only for testing
@@ -77,7 +102,7 @@ void PrintSubscribers(SUBSCRIBER *tree) {
 	if (tree != NULL) {
 
 		PrintSubscribers(tree->left);
-		
+
 		printf("functions_tree: user with MAC address %lu: IP address %d, session_id 0x%04x\n", tree->mac, tree->ip, ntohs(tree->session_id));		
 
 		PrintSubscribers(tree->right);
@@ -92,7 +117,7 @@ SUBSCRIBER *FindSubscriberMAC(SUBSCRIBER **tree, LONG_MAC mac) {
 	if ((*tree) == NULL) return NULL;
 
 	else if (mac < (*tree)->mac) FindSubscriberMAC(&((*tree)->left), mac);
-	
+
 	else if (mac > (*tree)->mac) FindSubscriberMAC(&((*tree)->right), mac);
 
 	else if (mac == (*tree)->mac) return *tree;
@@ -114,15 +139,15 @@ SUBSCRIBER *FindSubscriberIP(SUBSCRIBER **tree, IP_ADDRESS ip) {
 		else {
 			tmp = current->left;
 			while(tmp->right != NULL && tmp->right != current)
-        			tmp = tmp->right;
+				tmp = tmp->right;
 			if(tmp->right == NULL) {
-        			tmp->right = current;
-        			current = current->left;
-      			}
+				tmp->right = current;
+				current = current->left;
+			}
 			else {
-        			tmp->right = NULL;
-        			if (current->ip == ip) return current;
-        			current = current->right; 
+				tmp->right = NULL;
+				if (current->ip == ip) return current;
+				current = current->right;
 			}
 		}
 	}
@@ -131,14 +156,14 @@ SUBSCRIBER *FindSubscriberIP(SUBSCRIBER **tree, IP_ADDRESS ip) {
 // Function which sets the threadID of the subscriber's thread
 void SetSubscriberThreadID(SUBSCRIBER **tree, LONG_MAC mac, pthread_t threadID) {
 
-        // Recursively find subscriber in tree
+	// Recursively find subscriber in tree
 	if ((*tree) == NULL) return;
 
-        else if (mac < (*tree)->mac) SetSubscriberThreadID(&((*tree)->left), mac, threadID);
+	else if (mac < (*tree)->mac) SetSubscriberThreadID(&((*tree)->left), mac, threadID);
 
-        else if (mac > (*tree)->mac) SetSubscriberThreadID(&((*tree)->right), mac, threadID);
+	else if (mac > (*tree)->mac) SetSubscriberThreadID(&((*tree)->right), mac, threadID);
 
-        else if (mac == (*tree)->mac) {
+	else if (mac == (*tree)->mac) {
 		(*tree)->subscriberThread = threadID;
 		return;
 	}
@@ -146,8 +171,8 @@ void SetSubscriberThreadID(SUBSCRIBER **tree, LONG_MAC mac, pthread_t threadID) 
 
 // Function which deletes subscriber from the tree
 void DeleteSubscriber(SUBSCRIBER **tree, LONG_MAC mac) {
-	
-    	SUBSCRIBER *parent, *tmp, *tmpsucc;
+
+	SUBSCRIBER *parent, *tmp, *tmpsucc;
 
 	// Return if tree is empty
 	if ((*tree) == NULL) return;
@@ -159,54 +184,54 @@ void DeleteSubscriber(SUBSCRIBER **tree, LONG_MAC mac) {
 	parent = tmp = NULL;
 	SearchTree(tree, mac, &parent, &tmp);
 
-    	// If the node to be deleted has two children
+	// If the node to be deleted has two children
 	if ( (tmp->left != NULL) && (tmp->right != NULL) )
-    	{
-        	parent = tmp;
-        	tmpsucc = tmp->right;
+	{
+		parent = tmp;
+		tmpsucc = tmp->right;
 
-        	while (tmpsucc->left != NULL)
-        	{
-            		parent = tmpsucc;
-            		tmpsucc = tmpsucc->left;
-        	}
+		while (tmpsucc->left != NULL)
+		{
+			parent = tmpsucc;
+			tmpsucc = tmpsucc->left;
+		}
 
-        	tmp->mac = tmpsucc->mac;
-        	tmp->ip = tmpsucc->ip;
-        	tmp->session_id = tmpsucc->session_id;
-        	tmp = tmpsucc;
-    	}
+		tmp->mac = tmpsucc->mac;
+		tmp->ip = tmpsucc->ip;
+		tmp->session_id = tmpsucc->session_id;
+		tmp = tmpsucc;
+	}
 
-    	// If the node to be deleted has no children
+	// If the node to be deleted has no children
 	if ( (tmp->left == NULL) && (tmp->right == NULL) )
-    	{
+	{
 		if (parent == NULL) (*tree) = NULL;
-        	else if (parent->right == tmp) parent->right = NULL;
-        	else parent->left = NULL;
-	
-        	free (tmp);
-        	return;
-    	}
+		else if (parent->right == tmp) parent->right = NULL;
+		else parent->left = NULL;
 
-    	// If the node to be deleted has only rightchild
+		free (tmp);
+		return;
+	}
+
+	// If the node to be deleted has only rightchild
 	if ( (tmp->left == NULL) && (tmp->right != NULL) )
-    	{
+	{
 		if (parent == NULL) (*tree) = tmp->right;
-        	else if (parent->left == tmp) parent->left = tmp->right;
-        	else parent->right = tmp->right;
+		else if (parent->left == tmp) parent->left = tmp->right;
+		else parent->right = tmp->right;
 
-        	free (tmp);
-        	return;
-    	}
+		free (tmp);
+		return;
+	}
 
-    	// If the node to be deleted has only left child
+	// If the node to be deleted has only left child
 	if ( (tmp->left != NULL) && (tmp->right == NULL) )
-    	{
+	{
 		if (parent == NULL) (*tree) = tmp->left;
-        	else if (parent->left == tmp) parent->left = tmp->left;
-        	else parent->right = tmp->left;
+		else if (parent->left == tmp) parent->left = tmp->left;
+		else parent->right = tmp->left;
 
-        	free (tmp);
-        	return;
-    	}
+		free (tmp);
+		return;
+	}
 }

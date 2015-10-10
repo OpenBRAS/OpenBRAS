@@ -2,7 +2,8 @@
 #ifndef FUNCTIONS_TREE_H_
 #define FUNCTIONS_TREE_H_
 
-void AddSubscriber(SUBSCRIBER **tree, LONG_MAC mac, MAC_ADDRESS mac_array, IP_ADDRESS ip, unsigned short session_id);
+void AddSubscriber(SUBSCRIBER **tree, LONG_MAC mac, MAC_ADDRESS mac_array, IP_ADDRESS ip, unsigned short session_id, BYTE authenticated);
+void UpdateSubscriber(SUBSCRIBER **tree, LONG_MAC mac, MAC_ADDRESS mac_array, IP_ADDRESS ip, unsigned short session_id, BYTE authenticated);
 void PrintSubscribers(SUBSCRIBER *tree);
 SUBSCRIBER *FindSubscriberMAC(SUBSCRIBER **tree, LONG_MAC mac);
 SUBSCRIBER *FindSubscriberIP(SUBSCRIBER **tree, IP_ADDRESS ip);

@@ -52,6 +52,15 @@
 #define SUCCESS 0x03
 #define FAILURE 0x04
 
+// Radius constants
+#define ACCESS_REQUEST 0x01
+#define ACCESS_ACCEPT 0x02
+#define ACCESS_REJECT 0x03
+
+#define USER_NAME 0x01
+#define USER_PASSWORD 0x02
+#define NAS_PORT 0x05
+
 // Maximum number of TAGs and maximum length of tag value in PPPoE discover packets
 #define MAX_TAG 18 // IANA registry as of April 11th 2014
 #define MAX_TAG_LENGTH 1484 - ETH_HEADER_LENGTH - PPPoE_HEADER_LENGTH
@@ -61,7 +70,8 @@
 #define MAX_OPTION_LENGTH 1484 - ETH_HEADER_LENGTH - PPPoE_HEADER_LENGTH - PPP_HEADER_LENGTH
 
 // Maximum length of PAP/CHAP username and password
-#define MAX_AUTH_LENGTH 200
+#define MAX_USERNAME_LENGTH 200
+#define MAX_PASSWORD_LENGTH 16
 
 // Configuration file parameters
 #define MAX_LINE_LENGTH 1000
@@ -73,6 +83,7 @@ char AC_Name[MAX_ARGUMENT_LENGTH];
 int MRU;
 char subscriberInterface[MAX_ARGUMENT_LENGTH];
 char outgoingInterface[MAX_ARGUMENT_LENGTH];
+char radiusInterface[MAX_ARGUMENT_LENGTH];
 int echoInterval;
 int sessionTimeout;
 char chap[MAX_ARGUMENT_LENGTH];
@@ -84,8 +95,10 @@ char IPv4_secondaryDNS[MAX_ARGUMENT_LENGTH];
 char IPv4_pool[MAX_ARGUMENT_LENGTH];
 char NAT[MAX_ARGUMENT_LENGTH];
 char IPv6[MAX_ARGUMENT_LENGTH];
+int radiusAuth;
 char Radius_primary[MAX_ARGUMENT_LENGTH];
 char Radius_secondary[MAX_ARGUMENT_LENGTH];
+char Radius_secret[MAX_ARGUMENT_LENGTH];
 int authPort;
 int accPort;
 
@@ -185,6 +198,8 @@ struct subscriber_definition {
 	unsigned long long bytesSent;
 	unsigned long long bytesReceived;
 
+	BYTE authenticated;
+
 	struct subscriber_definition *left;
 	struct subscriber_definition *right;
 };
@@ -192,3 +207,6 @@ typedef struct subscriber_definition SUBSCRIBER;
 
 // Subscriber list tree
 SUBSCRIBER *subscriberList;
+
+// Radius UDP socket
+int radiusSocket;

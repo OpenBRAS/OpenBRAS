@@ -15,7 +15,7 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with OpenBRAS. If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 
 #include "headers.h"
 #include "variables.h"
@@ -32,6 +32,7 @@ void SetExternVariables(FILE *fd) {
 	extern int MRU;
 	extern char subscriberInterface[MAX_ARGUMENT_LENGTH];
 	extern char outgoingInterface[MAX_ARGUMENT_LENGTH];
+	extern char radiusInterface[MAX_ARGUMENT_LENGTH];
 	extern int echoInterval;
 	extern int sessionTimeout;
 	extern char chap[MAX_ARGUMENT_LENGTH];
@@ -45,8 +46,10 @@ void SetExternVariables(FILE *fd) {
 	extern char IPv6[MAX_ARGUMENT_LENGTH];
 	extern char Radius_primary[MAX_ARGUMENT_LENGTH];
 	extern char Radius_secondary[MAX_ARGUMENT_LENGTH];
+	extern char Radius_secret[MAX_ARGUMENT_LENGTH];
 	extern int authPort;
 	extern int accPort;
+	extern int radiusAuth;
 
 	extern char db_machine[MAX_ARGUMENT_LENGTH];
 	extern char db_username[MAX_ARGUMENT_LENGTH];
@@ -66,6 +69,9 @@ void SetExternVariables(FILE *fd) {
 	strcpy(IPv4_secondaryDNS, "8.8.4.4");
 	strcpy(NAT, "no");
 	strcpy(IPv6, "no");
+
+	radiusAuth = 0;
+	strcpy(Radius_primary, "127.0.0.1");
 	authPort = 1812;
 	accPort = 1813;
 
@@ -84,6 +90,7 @@ void SetExternVariables(FILE *fd) {
 		if (strcmp(configuration[i].parameter, "MRU") == 0) MRU = atoi(configuration[i].value);
 		if (strcmp(configuration[i].parameter, "Subscriber_interface") == 0) strcpy(subscriberInterface, configuration[i].value);
 		if (strcmp(configuration[i].parameter, "Outgoing_interface") == 0) strcpy(outgoingInterface, configuration[i].value);
+		if (strcmp(configuration[i].parameter, "Radius_interface") == 0) strcpy(radiusInterface, configuration[i].value);
 		if (strcmp(configuration[i].parameter, "LCP_Echo_interval") == 0) echoInterval = atoi(configuration[i].value);
 		if (strcmp(configuration[i].parameter, "Session_timeout") == 0) sessionTimeout = atoi(configuration[i].value);
 		if (strcmp(configuration[i].parameter, "CHAP") == 0) strcpy(chap, configuration[i].value);
@@ -95,8 +102,11 @@ void SetExternVariables(FILE *fd) {
 		if (strcmp(configuration[i].parameter, "IPv4_pool") == 0) strcpy(IPv4_pool, configuration[i].value);
 		if (strcmp(configuration[i].parameter, "NAT") == 0) strcpy(NAT, configuration[i].value);
 		if (strcmp(configuration[i].parameter, "IPv6") == 0) strcpy(IPv6, configuration[i].value);
+
+		if (strcmp(configuration[i].parameter, "Radius_authentication") == 0) radiusAuth = atoi(configuration[i].value);
 		if (strcmp(configuration[i].parameter, "Radius_primary") == 0) strcpy(Radius_primary, configuration[i].value);
 		if (strcmp(configuration[i].parameter, "Radius_secondary") == 0) strcpy(Radius_secondary, configuration[i].value);
+		if (strcmp(configuration[i].parameter, "Radius_secret") == 0) strcpy(Radius_secret, configuration[i].value);
 		if (strcmp(configuration[i].parameter, "Authentication_port") == 0) authPort = atoi(configuration[i].value);
 		if (strcmp(configuration[i].parameter, "Accounting_port") == 0) accPort = atoi(configuration[i].value);
 
@@ -112,64 +122,64 @@ void SetExternVariables(FILE *fd) {
 // returns: number of configuration parameters
 int ParseConfigurationFile(FILE *fd, CONF_PARAMETER *configuration) {
 
-        int i, j, value_present = 0, param_num;
-        char line[MAX_LINE_LENGTH], line_clean[MAX_LINE_LENGTH], parameter[MAX_ARGUMENT_LENGTH], value[MAX_ARGUMENT_LENGTH];
-	
+	int i, j, value_present = 0, param_num;
+	char line[MAX_LINE_LENGTH], line_clean[MAX_LINE_LENGTH], parameter[MAX_ARGUMENT_LENGTH], value[MAX_ARGUMENT_LENGTH];
+
 	param_num = 0;
-        while(fgets(line, MAX_LINE_LENGTH, fd) != NULL) {
+	while(fgets(line, MAX_LINE_LENGTH, fd) != NULL) {
 
-                // Ignore comments
-                if (line[0] == '#') continue;
+		// Ignore comments
+		if (line[0] == '#') continue;
 
-                // Remove whitespaces from each configuration line
-                i = 0; j = 0;
-                while(line[i] != 0) {
-                        if (line[i] != ' ') {
-                                line_clean[j] = line[i];
-                                j++;
-                        }
-                        i++;
-                }
-                line_clean[j] = 0;
-        
-                // Get parameter name   
-                sscanf(line_clean, "%[^=]s", configuration[param_num].parameter);
-        
-                // Get parameter value  
-                i = 0; j = 0; value_present = 0;
-                while(line_clean[i] != 0) {
-                        if (line_clean[i] == '.') {
-                                value[j] = line_clean[i];
-                                j++;
-                        }
-                        if (line_clean[i] == '/') {
-                                value[j] = line_clean[i];
-                                j++;
-                        }
+		// Remove whitespaces from each configuration line
+		i = 0; j = 0;
+		while(line[i] != 0) {
+			if (line[i] != ' ') {
+				line_clean[j] = line[i];
+				j++;
+			}
+			i++;
+		}
+		line_clean[j] = 0;
+
+		// Get parameter name
+		sscanf(line_clean, "%[^=]s", configuration[param_num].parameter);
+
+		// Get parameter value
+		i = 0; j = 0; value_present = 0;
+		while(line_clean[i] != 0) {
+			if (line_clean[i] == '.') {
+				value[j] = line_clean[i];
+				j++;
+			}
+			if (line_clean[i] == '/') {
+				value[j] = line_clean[i];
+				j++;
+			}
 			if (line_clean[i] < 48) {
 				i++;
 				continue;
 			}
-                        if (line_clean[i] == '=') {
-                                value_present = 1;
-                                i++;
-                                continue;
-                        }
-                        if (value_present) {
-                                value[j] = line_clean[i];
-                                j++;
-                        }
-                        i++;
-                }
-                value[j] = 0;
+			if (line_clean[i] == '=') {
+				value_present = 1;
+				i++;
+				continue;
+			}
+			if (value_present) {
+				value[j] = line_clean[i];
+				j++;
+			}
+			i++;
+		}
+		value[j] = 0;
 
 		// If there is no valid value for the parameter, ignore
-                if (value[0] < 48) continue;
+		if (value[0] < 48) continue;
 		else strcpy(configuration[param_num].value, value);
 
 		param_num++;
-        }       
-	
+	}
+
 	return param_num;
 }
 
@@ -197,18 +207,18 @@ BYTE *GetMACAddress(char *interface, int rawSocket) {
 	struct ifreq if_mac;
 	struct sockaddr_ll sll;
 
-        sll.sll_family = AF_PACKET;
-        sll.sll_protocol = htons(ETH_P_ALL);
+	sll.sll_family = AF_PACKET;
+	sll.sll_protocol = htons(ETH_P_ALL);
 
-        memset(&if_mac, 0, sizeof(struct ifreq));
-        strncpy(if_mac.ifr_name, interface, IFNAMSIZ-1);
-        if (ioctl(rawSocket, SIOCGIFHWADDR, &if_mac) < 0) {
-                syslog(LOG_ERR, "MAC address of %s not retrieved", interface);
+	memset(&if_mac, 0, sizeof(struct ifreq));
+	strncpy(if_mac.ifr_name, interface, IFNAMSIZ-1);
+	if (ioctl(rawSocket, SIOCGIFHWADDR, &if_mac) < 0) {
+		syslog(LOG_ERR, "MAC address of %s not retrieved", interface);
 		return NULL;
 	}
 
-        mac = malloc(6 * sizeof(BYTE));
-        memcpy(mac, if_mac.ifr_hwaddr.sa_data, 6);
+	mac = malloc(6 * sizeof(BYTE));
+	memcpy(mac, if_mac.ifr_hwaddr.sa_data, 6);
 
 	return mac;
 }
@@ -216,58 +226,99 @@ BYTE *GetMACAddress(char *interface, int rawSocket) {
 // Function which creates a raw socket and binds it to a selected interface
 // returns: raw socket
 int BindRawSocket(char *interface) {
-        int rawSocket;
-        struct sockaddr_ll sll;
-        struct ifreq ifr;
+	int rawSocket;
+	struct sockaddr_ll sll;
+	struct ifreq ifr;
 
-        // Create raw socket
-        if ((rawSocket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) {
-                syslog(LOG_ERR, "Raw Socket not created on interface %s\n", interface);
-                return -1;
-        }
+	// Create raw socket
+	if ((rawSocket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) {
+		syslog(LOG_ERR, "Raw Socket not created on interface %s\n", interface);
+		return -1;
+	}
 
-        // Get interface based on command line argument
-        strncpy((char *)ifr.ifr_name, interface, IFNAMSIZ);
-        if((ioctl(rawSocket, SIOCGIFINDEX, &ifr)) == -1) {
-                syslog(LOG_ERR, "Interface %s not valid\n", interface);
-                return -1;
-        }
+	// Get interface based on command line argument
+	strncpy((char *)ifr.ifr_name, interface, IFNAMSIZ);
+	if((ioctl(rawSocket, SIOCGIFINDEX, &ifr)) == -1) {
+		syslog(LOG_ERR, "Interface %s not valid\n", interface);
+		return -1;
+	}
 
-        // Bind to raw socket
-        sll.sll_family = AF_PACKET;
-        sll.sll_ifindex = ifr.ifr_ifindex;
-        sll.sll_protocol = htons(ETH_P_ALL);
-        if (bind(rawSocket, (struct sockaddr *) &sll, sizeof(struct sockaddr_ll)) == -1) {
-                syslog(LOG_ERR, "Bind to raw interface %s not valid\n", interface);
-                return -1;
-        }
+	// Bind to raw socket
+	sll.sll_family = AF_PACKET;
+	sll.sll_ifindex = ifr.ifr_ifindex;
+	sll.sll_protocol = htons(ETH_P_ALL);
+	if (bind(rawSocket, (struct sockaddr *) &sll, sizeof(struct sockaddr_ll)) == -1) {
+		syslog(LOG_ERR, "Bind to raw interface %s not valid\n", interface);
+		return -1;
+	}
 
-        return rawSocket;
+	return rawSocket;
 }
 
 // Function which creates an IP socket
 // returns: IP socket
 int CreateIPSocket() {
-        
+
 	int ipSocket, one = 1;
 
-        // Create socket for IP packets
-  	if ((ipSocket = socket (AF_INET, SOCK_RAW, IPPROTO_RAW)) == -1) {
-    		syslog(LOG_ERR, "IP Socket not created");
-    		return -1;
-  	}
+	// Create socket for IP packets
+	if ((ipSocket = socket (AF_INET, SOCK_RAW, IPPROTO_RAW)) == -1) {
+		syslog(LOG_ERR, "IP Socket not created");
+		return -1;
+	}
 
-  	// Set IP_HDRINCL so that the kernel adds the link layer headers
+	// Set IP_HDRINCL so that the kernel adds the link layer headers
 	if (setsockopt (ipSocket, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) == -1) {
-    		syslog(LOG_ERR, "IP_HDRINCL not set");
-    		return -1;	
-  	}
+		syslog(LOG_ERR, "IP_HDRINCL not set");
+		return -1;
+	}
 
 	// Enable sending of broadcast packets
 	if (setsockopt (ipSocket, SOL_SOCKET, SO_BROADCAST, &one, sizeof(one))==-1) {
-    		syslog(LOG_ERR, "SO_BROADCAST not set");
-    		return -1;	
+		syslog(LOG_ERR, "SO_BROADCAST not set");
+		return -1;
 	}
 
-        return ipSocket;
+	return ipSocket;
+}
+
+// Function which creates an UDP socket
+// returns: UDP socket
+int BindUDPSocket(char *interface, unsigned short port) {
+
+	int udpSocket;
+	struct sockaddr_in sin;
+	struct ifreq ifr;
+
+	// Create UDP socket
+	if ((udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
+		syslog(LOG_ERR, "UDP Socket not created");
+		return -1;
+	}
+
+	// Get interface based on command line argument
+	ifr.ifr_addr.sa_family = AF_INET;
+	strncpy((char *)ifr.ifr_name, interface, IFNAMSIZ);
+	if((ioctl(udpSocket, SIOCGIFINDEX, &ifr)) == -1) {
+		syslog(LOG_ERR, "Interface not valid");
+		return -1;
+	}
+
+	// Get IP address of interface
+	strncpy((char *)ifr.ifr_name, interface, IFNAMSIZ);
+	if((ioctl(udpSocket, SIOCGIFADDR, &ifr)) == -1) {
+		syslog(LOG_ERR, "Interface not valid");
+		return -1;
+	}
+
+	// Set UDP source IP and port
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = ((struct sockaddr_in *) &ifr.ifr_addr)->sin_addr.s_addr;
+	sin.sin_port = htons(port);
+	if (bind(udpSocket, (struct sockaddr *) &sin, sizeof(sin)) == -1) {
+		syslog(LOG_ERR, "Bind to UDP interface not valid");
+		return -1;
+	}
+
+	return udpSocket;
 }
