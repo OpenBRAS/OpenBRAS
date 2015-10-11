@@ -15,7 +15,7 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with OpenBRAS. If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 
 #include "headers.h"
 #include "variables.h"
@@ -31,37 +31,37 @@ RESPONSE ParseIncoming_IPV6CP(char packet[PACKET_LENGTH], int bytesReceived) {
 	RESPONSE response;
 	PPPoE_SESSION *session = malloc(bytesReceived - ETH_HEADER_LENGTH);
 
-        ETHERNET_PACKET *ethPacket = malloc(bytesReceived);
-        memcpy(ethPacket, packet, bytesReceived);
+	ETHERNET_PACKET *ethPacket = malloc(bytesReceived);
+	memcpy(ethPacket, packet, bytesReceived);
 
-        response.length = 0;
-        response.packet = malloc(PACKET_LENGTH);
-        bzero(response.packet, PACKET_LENGTH);
+	response.length = 0;
+	response.packet = malloc(PACKET_LENGTH);
+	bzero(response.packet, PACKET_LENGTH);
 
 	memcpy(session, ethPacket->payload, bytesReceived - ETH_HEADER_LENGTH);
 
 	switch (session->ppp_code) {
 
-		case CONF_REQ: 	// Return IPV6CP Terminate-Request message because IPv6 is not yet implemented
-			
-				return SendIPv6CPTerminateRequest(ethPacket, bytesReceived);
-				
-				break;
-		
-		case TERM_REQ:  // If Terminate-Request has been received, respond with Terminate-Ack
+	case CONF_REQ: 	// Return IPV6CP Terminate-Request message because IPv6 is not yet implemented
 
-                                return SendIPV6CPTerminateAck(ethPacket, bytesReceived);
-                                break;
+		return SendIPv6CPTerminateRequest(ethPacket, bytesReceived);
 
-		case CONF_ACK:
-                case TERM_ACK:  // If Configure-Ack or Terminate-Ack have been received, don't send any response
+		break;
 
-                                response.length = 0;
-                                return response;
-                                break;
+	case TERM_REQ:  // If Terminate-Request has been received, respond with Terminate-Ack
 
-		default:	
-				break;
+		return SendIPV6CPTerminateAck(ethPacket, bytesReceived);
+		break;
+
+	case CONF_ACK:
+	case TERM_ACK:  // If Configure-Ack or Terminate-Ack have been received, don't send any response
+
+		response.length = 0;
+		return response;
+		break;
+
+	default:
+		break;
 
 	}
 
@@ -74,52 +74,52 @@ RESPONSE ParseIncoming_IPV6CP(char packet[PACKET_LENGTH], int bytesReceived) {
 RESPONSE SendIPV6CPTerminateAck(ETHERNET_PACKET *ethPacket, int bytesReceived) {
 
 	int i, position = 0;
-        RESPONSE response;
-        PPPoE_SESSION *session = malloc(bytesReceived - ETH_HEADER_LENGTH);
+	RESPONSE response;
+	PPPoE_SESSION *session = malloc(bytesReceived - ETH_HEADER_LENGTH);
 
-        memcpy(session, ethPacket->payload, bytesReceived - ETH_HEADER_LENGTH);
+	memcpy(session, ethPacket->payload, bytesReceived - ETH_HEADER_LENGTH);
 
-        response.length = 0;
-        response.packet = malloc(PACKET_LENGTH);
-        bzero(response.packet, PACKET_LENGTH);
+	response.length = 0;
+	response.packet = malloc(PACKET_LENGTH);
+	bzero(response.packet, PACKET_LENGTH);
 
-        // Create reply packet
-        position = 0;
-        // Add destination MAC       
-        memcpy(response.packet, ethPacket->sourceMAC, MAC_ADDRESS_LENGTH); position += MAC_ADDRESS_LENGTH;
-        // Add placeholder for source MAC
-        Append(response.packet, position, "\x00\x00\x00\x00\x00\x00", MAC_ADDRESS_LENGTH); position += MAC_ADDRESS_LENGTH;
-        // Add ethertype
-        Append(response.packet, position, "\x88\x64", ETHERTYPE_LENGTH); position += ETHERTYPE_LENGTH;
-        // Add PPPoE header
-        Append(response.packet, position, "\x11", 1); position++;
-        Append(response.packet, position, "\x00", 1); position++;
-        // Add PPPoE SESSION_ID
-        response.packet[position] = session->session_id % 256; position++;
-        response.packet[position] = session->session_id / 256; position++;
-        // Add payload length
-        response.packet[position] = session->length % 256; position++;
-        response.packet[position] = session->length / 256; position++;
-        // Add PPP protocol
-        Append(response.packet, position, "\x80\x57", 2); position += 2;
-        // Add code for Terminate-Ack
-        response.packet[position] = 0x06; position++;
-        // Add identifier
-        response.packet[position] = session->ppp_identifier; position++;
-        // Add length
-        response.packet[position] = session->ppp_length % 256; position++;
-        response.packet[position] = session->ppp_length / 256; position++;
-        // Add data
-        for (i = 0; i < ntohs(session->ppp_length); i++) {
-                response.packet[position] = session->options[i];
-                position++;
-        }
+	// Create reply packet
+	position = 0;
+	// Add destination MAC
+	memcpy(response.packet, ethPacket->sourceMAC, MAC_ADDRESS_LENGTH); position += MAC_ADDRESS_LENGTH;
+	// Add placeholder for source MAC
+	Append(response.packet, position, "\x00\x00\x00\x00\x00\x00", MAC_ADDRESS_LENGTH); position += MAC_ADDRESS_LENGTH;
+	// Add ethertype
+	Append(response.packet, position, "\x88\x64", ETHERTYPE_LENGTH); position += ETHERTYPE_LENGTH;
+	// Add PPPoE header
+	Append(response.packet, position, "\x11", 1); position++;
+	Append(response.packet, position, "\x00", 1); position++;
+	// Add PPPoE SESSION_ID
+	response.packet[position] = session->session_id % 256; position++;
+	response.packet[position] = session->session_id / 256; position++;
+	// Add payload length
+	response.packet[position] = session->length % 256; position++;
+	response.packet[position] = session->length / 256; position++;
+	// Add PPP protocol
+	Append(response.packet, position, "\x80\x57", 2); position += 2;
+	// Add code for Terminate-Ack
+	response.packet[position] = 0x06; position++;
+	// Add identifier
+	response.packet[position] = session->ppp_identifier; position++;
+	// Add length
+	response.packet[position] = session->ppp_length % 256; position++;
+	response.packet[position] = session->ppp_length / 256; position++;
+	// Add data
+	for (i = 0; i < ntohs(session->ppp_length); i++) {
+		response.packet[position] = session->options[i];
+		position++;
+	}
 
-	// Before sending Terminate-Request, remove subscriber from database
-        RemoveSubscriber(ethPacket->sourceMAC);
+	// If local authentications is used, before sending Terminate-Request, remove subscriber from database
+	if (!radiusAuth) RemoveSubscriber(ethPacket->sourceMAC);
 
-        response.length = position;
-        return response;
+	response.length = position;
+	return response;
 }
 
 // Function to send IPV6CP Terminate-Request
@@ -129,45 +129,45 @@ RESPONSE SendIPv6CPTerminateRequest(ETHERNET_PACKET *ethPacket, int bytesReceive
 	int i, position;
 
 	RESPONSE response;
-        PPPoE_SESSION *session = malloc(bytesReceived - ETH_HEADER_LENGTH);
-        PPP_OPTION option[MAX_OPTION];
+	PPPoE_SESSION *session = malloc(bytesReceived - ETH_HEADER_LENGTH);
+	PPP_OPTION option[MAX_OPTION];
 
-        response.length = 0;
-        response.packet = malloc(PACKET_LENGTH);
-        bzero(response.packet, PACKET_LENGTH);
+	response.length = 0;
+	response.packet = malloc(PACKET_LENGTH);
+	bzero(response.packet, PACKET_LENGTH);
 
-        memcpy(session, ethPacket->payload, bytesReceived - ETH_HEADER_LENGTH);
+	memcpy(session, ethPacket->payload, bytesReceived - ETH_HEADER_LENGTH);
 
 	// Create reply packet
-        position = 0;
-        // Add destination MAC       
-        memcpy(response.packet, ethPacket->sourceMAC, MAC_ADDRESS_LENGTH); position += MAC_ADDRESS_LENGTH;
-        // Add placeholder for source MAC
-        Append(response.packet, position, "\x00\x00\x00\x00\x00\x00", MAC_ADDRESS_LENGTH); position += MAC_ADDRESS_LENGTH;
-        // Add ethertype
-        Append(response.packet, position, "\x88\x64", ETHERTYPE_LENGTH); position += ETHERTYPE_LENGTH;
-        // Add PPPoE header
-        Append(response.packet, position, "\x11", 1); position++;
-        Append(response.packet, position, "\x00", 1); position++;
-        // Add PPPoE SESSION_ID
-        response.packet[position] = session->session_id % 256; position++;
-        response.packet[position] = session->session_id / 256; position++;
-        // Add PPPoE payload length 
-        response.packet[position] = session->length % 256; position++;
-        response.packet[position] = session->length / 256; position++;
-        // Add PPP protocol
-        Append(response.packet, position, "\x80\x57", 2); position += 2;
-        // Add code (Terminate-Request)
-        response.packet[position] = 0x05; position++;
+	position = 0;
+	// Add destination MAC
+	memcpy(response.packet, ethPacket->sourceMAC, MAC_ADDRESS_LENGTH); position += MAC_ADDRESS_LENGTH;
+	// Add placeholder for source MAC
+	Append(response.packet, position, "\x00\x00\x00\x00\x00\x00", MAC_ADDRESS_LENGTH); position += MAC_ADDRESS_LENGTH;
+	// Add ethertype
+	Append(response.packet, position, "\x88\x64", ETHERTYPE_LENGTH); position += ETHERTYPE_LENGTH;
+	// Add PPPoE header
+	Append(response.packet, position, "\x11", 1); position++;
+	Append(response.packet, position, "\x00", 1); position++;
+	// Add PPPoE SESSION_ID
+	response.packet[position] = session->session_id % 256; position++;
+	response.packet[position] = session->session_id / 256; position++;
+	// Add PPPoE payload length
+	response.packet[position] = session->length % 256; position++;
+	response.packet[position] = session->length / 256; position++;
+	// Add PPP protocol
+	Append(response.packet, position, "\x80\x57", 2); position += 2;
+	// Add code (Terminate-Request)
+	response.packet[position] = 0x05; position++;
 	// Add identifier
-        response.packet[position] = rand() % 256; position++;
-        // Add length
-        response.packet[position] = 0x00; position++;
-        response.packet[position] = 0x04; position++;
+	response.packet[position] = rand() % 256; position++;
+	// Add length
+	response.packet[position] = 0x00; position++;
+	response.packet[position] = 0x04; position++;
 
-	// Before sending Terminate-Request, remove subscriber from database
-        RemoveSubscriber(ethPacket->sourceMAC);
+	// If local authentications is used, before sending Terminate-Request, remove subscriber from database
+	if (!radiusAuth) RemoveSubscriber(ethPacket->sourceMAC);
 
 	response.length = position;
-        return response;
+	return response;
 }

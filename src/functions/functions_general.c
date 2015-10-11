@@ -257,9 +257,18 @@ int BindRawSocket(char *interface) {
 
 // Function which creates an IP socket
 // returns: IP socket
-int CreateIPSocket() {
+int CreateIPSocket(char *interface) {
 
 	int ipSocket, one = 1;
+	struct ifreq ifr;
+
+	// Get interface based on command line argument
+	ifr.ifr_addr.sa_family = AF_INET;
+	strncpy((char *)ifr.ifr_name, interface, IFNAMSIZ);
+	if((ioctl(ipSocket, SIOCGIFINDEX, &ifr)) == -1) {
+		syslog(LOG_ERR, "Interface %s not valid: %s", interface, strerror(errno));
+		return -1;
+	}
 
 	// Create socket for IP packets
 	if ((ipSocket = socket (AF_INET, SOCK_RAW, IPPROTO_RAW)) == -1) {
@@ -279,12 +288,18 @@ int CreateIPSocket() {
 		return -1;
 	}
 
+	// Bind socket to interface index.
+	if (setsockopt (ipSocket, SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof (ifr)) < 0) {
+		syslog(LOG_ERR, "IP Socket options error");
+		return -1;
+	}
+
 	return ipSocket;
 }
 
 // Function which creates an UDP socket
 // returns: UDP socket
-int BindUDPSocket(char *interface, unsigned short port) {
+int BindUDPSocket(char *interface) {
 
 	int udpSocket;
 	struct sockaddr_in sin;
@@ -314,7 +329,6 @@ int BindUDPSocket(char *interface, unsigned short port) {
 	// Set UDP source IP and port
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr = ((struct sockaddr_in *) &ifr.ifr_addr)->sin_addr.s_addr;
-	sin.sin_port = htons(port);
 	if (bind(udpSocket, (struct sockaddr *) &sin, sizeof(sin)) == -1) {
 		syslog(LOG_ERR, "Bind to UDP interface not valid");
 		return -1;

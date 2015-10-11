@@ -13,6 +13,7 @@
 #define ETH_HEADER_LENGTH MAC_ADDRESS_LENGTH * 2 + ETHERTYPE_LENGTH
 #define PPPoE_HEADER_LENGTH 6
 #define PPP_HEADER_LENGTH 2
+#define RADIUS_HEADER_LENGTH 20
 
 // PPPoE constants
 #define VERSION_TYPE 0x11
@@ -160,6 +161,15 @@ typedef struct {
 	unsigned char options[PACKET_LENGTH - ETH_HEADER_LENGTH - PPPoE_HEADER_LENGTH - PPP_HEADER_LENGTH];
 } PPPoE_SESSION;
 
+// RADIUS_PACKET definition
+typedef struct {
+	BYTE code;
+	BYTE identifier;
+	unsigned short length;
+	BYTE authenticator[16];
+	unsigned char options[PACKET_LENGTH - RADIUS_HEADER_LENGTH];
+} RADIUS_PACKET;
+
 // RESPONSE definition
 typedef struct {
 	unsigned char *packet;
@@ -189,9 +199,10 @@ typedef struct {
 
 // Subscriber parameters
 struct subscriber_definition {
-	unsigned long mac;
+	LONG_MAC mac;
 	MAC_ADDRESS mac_array;
 	IP_ADDRESS ip;
+	BYTE username[MAX_USERNAME_LENGTH];
 	unsigned short session_id;
 	pthread_t subscriberThread;
 	enum {TRUE, FALSE} echoReceived;
@@ -199,6 +210,8 @@ struct subscriber_definition {
 	unsigned long long bytesReceived;
 
 	BYTE authenticated;
+	BYTE aaaAuthenticator[16];
+	BYTE auth_ppp_identifier;
 
 	struct subscriber_definition *left;
 	struct subscriber_definition *right;
@@ -208,5 +221,5 @@ typedef struct subscriber_definition SUBSCRIBER;
 // Subscriber list tree
 SUBSCRIBER *subscriberList;
 
-// Radius UDP socket
-int radiusSocket;
+// Sockets
+int rawSocket, ipSocket, rawSocketInternet, radiusSocket;

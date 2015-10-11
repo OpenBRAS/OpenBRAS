@@ -15,7 +15,7 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with OpenBRAS. If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 
 #include "headers.h"
 #include "variables.h"
@@ -26,65 +26,11 @@ along with OpenBRAS. If not, see <http://www.gnu.org/licenses/>.
 #include "functions_ipcp.h"
 #include "functions_tree.h"
 
-// Function which adds a new subscriber to the subscriber list and new session to the database
-void AddNewSubscriber(ETHERNET_PACKET *ethPacket, int bytesReceived, BYTE authenticated) {
-
-	int i, j;
-	LONG_MAC mac = 0;
-	MAC_ADDRESS mac_array;
-	IP_ADDRESS ip = 0;
-
-	PPPoE_SESSION *session = malloc(bytesReceived - ETH_HEADER_LENGTH);
-	PPP_OPTION option;
-	memcpy(session, ethPacket->payload, bytesReceived - ETH_HEADER_LENGTH);
-
-	// Get the subscriber MAC address in LONG_MAC format
-	mac = ((LONG_MAC) ntohs(ethPacket->sourceMAC[0]) << 32) | ((LONG_MAC) ntohs(ethPacket->sourceMAC[1]) << 16) | ((LONG_MAC) ntohs(ethPacket->sourceMAC[2]));
-
-	// Get MAC address in array format
-	for (i = 0; i < 3; i++) mac_array[i] = ethPacket->sourceMAC[i];
-
-	// Get subscriber IP address
-	i = 0;
-        while (i < (ntohs(session->ppp_length) - 4)) {
-                // Get OPTION_TYPE
-                option.type = session->options[i];
-
-                // Get OPTION_LENGTH
-                option.length = session->options[i+1];
-
-                // Get OPTION_VALUE
-                i = i + 2;
-                j = 0;
-                bzero(option.value, MAX_OPTION_LENGTH);
-                while (j < (option.length - 2)) {
-                        option.value[j] = session->options[i];
-                        i++;
-                        j++;
-                }
-
-		if (option.type == 3) ip = (option.value[0] << 24) | (option.value[1] << 16) | (option.value[2] << 8) | option.value[3];
-	}
-
-	if ( (ip == 0) || (mac == 0) ) return;
-
-	// Add subscriber to binary tree
-	sem_wait(&semaphoreTree);
-	AddSubscriber(&subscriberList, mac, mac_array, ip, session->session_id, authenticated);
-	sem_post(&semaphoreTree);
-
-	// Change subscriber state
-	SetSubscriberStateMAC(mac, "ACTIVE");
-	// Create new subscriber session in database
-	CreateNewSession(mac, ip, session->session_id);
-}
-
 // Function which updated the subscriber in list
 void UpdateNewSubscriber(ETHERNET_PACKET *ethPacket, int bytesReceived, BYTE authenticated) {
 
 	int i, j;
 	LONG_MAC mac = 0;
-	MAC_ADDRESS mac_array;
 	IP_ADDRESS ip = 0;
 
 	PPPoE_SESSION *session = malloc(bytesReceived - ETH_HEADER_LENGTH);
@@ -94,42 +40,42 @@ void UpdateNewSubscriber(ETHERNET_PACKET *ethPacket, int bytesReceived, BYTE aut
 	// Get the subscriber MAC address in LONG_MAC format
 	mac = ((LONG_MAC) ntohs(ethPacket->sourceMAC[0]) << 32) | ((LONG_MAC) ntohs(ethPacket->sourceMAC[1]) << 16) | ((LONG_MAC) ntohs(ethPacket->sourceMAC[2]));
 
-	// Get MAC address in array format
-	for (i = 0; i < 3; i++) mac_array[i] = ethPacket->sourceMAC[i];
-
 	// Get subscriber IP address
 	i = 0;
-        while (i < (ntohs(session->ppp_length) - 4)) {
-                // Get OPTION_TYPE
-                option.type = session->options[i];
+	while (i < (ntohs(session->ppp_length) - 4)) {
+		// Get OPTION_TYPE
+		option.type = session->options[i];
 
-                // Get OPTION_LENGTH
-                option.length = session->options[i+1];
+		// Get OPTION_LENGTH
+		option.length = session->options[i+1];
 
-                // Get OPTION_VALUE
-                i = i + 2;
-                j = 0;
-                bzero(option.value, MAX_OPTION_LENGTH);
-                while (j < (option.length - 2)) {
-                        option.value[j] = session->options[i];
-                        i++;
-                        j++;
-                }
+		// Get OPTION_VALUE
+		i = i + 2;
+		j = 0;
+		bzero(option.value, MAX_OPTION_LENGTH);
+		while (j < (option.length - 2)) {
+			option.value[j] = session->options[i];
+			i++;
+			j++;
+		}
 
 		if (option.type == 3) ip = (option.value[0] << 24) | (option.value[1] << 16) | (option.value[2] << 8) | option.value[3];
 	}
 
 	if ( (ip == 0) || (mac == 0) ) return;
 
-	// Add subscriber to binary tree
+	// Update subscriber in binary tree
 	sem_wait(&semaphoreTree);
-	UpdateSubscriber(&subscriberList, mac, mac_array, ip, session->session_id, authenticated);
+	UpdateSubscriber(&subscriberList, mac, ip);
 	sem_post(&semaphoreTree);
 
-	// Change subscriber state
-	SetSubscriberStateMAC(mac, "ACTIVE");
-	// Create new subscriber session in database
-	CreateNewSession(mac, ip, session->session_id);
+	// If local authentication is used, update database
+	if (!radiusAuth) {
+		// Change subscriber state
+		SetSubscriberStateMAC(mac, "ACTIVE");
+		// Create new subscriber session in database
+		CreateNewSession(mac, ip, session->session_id);
+	}
 }
 
 // Functions which checks which IP address is available
@@ -149,7 +95,7 @@ unsigned int GetFreeIPAddress() {
 	// Search for available IP addresses in the binary tree
 	for (i = 1; i <= length_binary; i++) {
 		tmp = mask + i;
-	
+
 		sem_wait(&semaphoreTree);
 		tmpSub = FindSubscriberIP(&subscriberList, tmp);
 		sem_post(&semaphoreTree);
@@ -168,30 +114,30 @@ RESPONSE ParseIncoming_IPCP(char packet[PACKET_LENGTH], int bytesReceived) {
 	RESPONSE response;
 	PPPoE_SESSION *session = malloc(bytesReceived - ETH_HEADER_LENGTH);
 
-        ETHERNET_PACKET *ethPacket = malloc(bytesReceived);
-        memcpy(ethPacket, packet, bytesReceived);
+	ETHERNET_PACKET *ethPacket = malloc(bytesReceived);
+	memcpy(ethPacket, packet, bytesReceived);
 
-        response.length = 0;
-        response.packet = malloc(PACKET_LENGTH);
-        bzero(response.packet, PACKET_LENGTH);
+	response.length = 0;
+	response.packet = malloc(PACKET_LENGTH);
+	bzero(response.packet, PACKET_LENGTH);
 
 	memcpy(session, ethPacket->payload, bytesReceived - ETH_HEADER_LENGTH);
 
 	switch (session->ppp_code) {
 
-		case CONF_REQ: 	// Parse an IPCP Configure-Request message and respond appropriately
-			
-				return ParseIPCPConfigureRequest(ethPacket, bytesReceived);
-				break;
-		
-		case CONF_ACK:	// If IPCP Configure-Ack has been received, don't send any response
+	case CONF_REQ: 	// Parse an IPCP Configure-Request message and respond appropriately
 
-				response.length = 0;
-				return response;
-				break;
+		return ParseIPCPConfigureRequest(ethPacket, bytesReceived);
+		break;
 
-		default:	
-				break;
+	case CONF_ACK:	// If IPCP Configure-Ack has been received, don't send any response
+
+		response.length = 0;
+		return response;
+		break;
+
+	default:
+		break;
 
 	}
 
@@ -204,7 +150,7 @@ RESPONSE ParseIncoming_IPCP(char packet[PACKET_LENGTH], int bytesReceived) {
 RESPONSE ParseIPCPConfigureRequest(ETHERNET_PACKET *ethPacket, int bytesReceived) {
 
 	int i, j, optionNumber = 0, position = 0, confRej = 0, confNak = 0, missing3 = 1, missing129 = 1;
-        unsigned short totalOptionLength = 4;
+	unsigned short totalOptionLength = 4;
 	unsigned int ip;
 	BYTE ip0, ip1, ip2, ip3;
 
@@ -212,9 +158,9 @@ RESPONSE ParseIPCPConfigureRequest(ETHERNET_PACKET *ethPacket, int bytesReceived
 	PPPoE_SESSION *session = malloc(bytesReceived - ETH_HEADER_LENGTH);
 	PPP_OPTION option[MAX_OPTION];
 
-        response.length = 0;
-        response.packet = malloc(PACKET_LENGTH);
-        bzero(response.packet, PACKET_LENGTH);
+	response.length = 0;
+	response.packet = malloc(PACKET_LENGTH);
+	bzero(response.packet, PACKET_LENGTH);
 
 	memcpy(session, ethPacket->payload, bytesReceived - ETH_HEADER_LENGTH);
 
@@ -229,59 +175,59 @@ RESPONSE ParseIPCPConfigureRequest(ETHERNET_PACKET *ethPacket, int bytesReceived
 
 	// Get all requested options in array and check which are present
 	i = 0;
-        while (i < (ntohs(session->ppp_length) - 4)) {
-        	// Get OPTION_TYPE
-                option[optionNumber].type = session->options[i];
+	while (i < (ntohs(session->ppp_length) - 4)) {
+		// Get OPTION_TYPE
+		option[optionNumber].type = session->options[i];
 
-                // Get OPTION_LENGTH
-                option[optionNumber].length = session->options[i+1];
-                                                
-                // Get OPTION_VALUE
-                i = i + 2; 
-                j = 0;
-                bzero(option[optionNumber].value, MAX_OPTION_LENGTH);
+		// Get OPTION_LENGTH
+		option[optionNumber].length = session->options[i+1];
+
+		// Get OPTION_VALUE
+		i = i + 2;
+		j = 0;
+		bzero(option[optionNumber].value, MAX_OPTION_LENGTH);
 		while (j < (option[optionNumber].length - 2)) {
-                	option[optionNumber].value[j] = session->options[i];
-                        i++; 
-                        j++;
-                }
+			option[optionNumber].value[j] = session->options[i];
+			i++;
+			j++;
+		}
 
 		// Check if options 3 (IP address) and 129 (Primary DNS) exist and reject all other options with Configure-Reject
-	        
-		// If the option is IP address, check if it's the one assigned
-                // If it isn't, modify and send Configuration-Nak
-                if (option[optionNumber].type == 3)  {
-			missing3 = 0;
-                        if (option[optionNumber].length != 6) confNak = 1;
 
-                        if ((option[optionNumber].value[0] != ip0) || (option[optionNumber].value[1] != ip1) || (option[optionNumber].value[2] != ip2) || (option[optionNumber].value[3] != ip3)) {
+		// If the option is IP address, check if it's the one assigned
+		// If it isn't, modify and send Configuration-Nak
+		if (option[optionNumber].type == 3)  {
+			missing3 = 0;
+			if (option[optionNumber].length != 6) confNak = 1;
+
+			if ((option[optionNumber].value[0] != ip0) || (option[optionNumber].value[1] != ip1) || (option[optionNumber].value[2] != ip2) || (option[optionNumber].value[3] != ip3)) {
 				option[optionNumber].value[0] = ip0;
 				option[optionNumber].value[1] = ip1;
 				option[optionNumber].value[2] = ip2;
 				option[optionNumber].value[3] = ip3;
 				option[optionNumber].valid = NAK;
 				confNak = 1;
-                        }
-                }
+			}
+		}
 		else if (option[optionNumber].type == 129) { 
 			missing129 = 0;
-                        if (option[optionNumber].length != 6) confNak = 1;
+			if (option[optionNumber].length != 6) confNak = 1;
 
-                        if ((option[optionNumber].value[0] != 8) || (option[optionNumber].value[1] != 8) || (option[optionNumber].value[2] != 8) || (option[optionNumber].value[3] != 8)) {
+			if ((option[optionNumber].value[0] != 8) || (option[optionNumber].value[1] != 8) || (option[optionNumber].value[2] != 8) || (option[optionNumber].value[3] != 8)) {
 				option[optionNumber].value[0] = 8;
 				option[optionNumber].value[1] = 8;
 				option[optionNumber].value[2] = 8;
 				option[optionNumber].value[3] = 8;
 				option[optionNumber].valid = NAK;
 				confNak = 1;
-                        }
+			}
 		}
 		else {
 			option[optionNumber].valid = REJECT;
 			confRej = 1;
 		}
 
-                optionNumber++;
+		optionNumber++;
 	}
 
 	// If MRU or Magic-Cookie are missing, send Configure-Nak
@@ -302,20 +248,20 @@ RESPONSE ParseIPCPConfigureRequest(ETHERNET_PACKET *ethPacket, int bytesReceived
 	// If the response is Ack, the length is copied
 	else totalOptionLength = ntohs(session->ppp_length);
 
-        // Create reply packet
-        position = 0;
-        // Add destination MAC       
-        memcpy(response.packet, ethPacket->sourceMAC, MAC_ADDRESS_LENGTH); position += MAC_ADDRESS_LENGTH;
-        // Add placeholder for source MAC
-        Append(response.packet, position, "\x00\x00\x00\x00\x00\x00", MAC_ADDRESS_LENGTH); position += MAC_ADDRESS_LENGTH;
-        // Add ethertype
-        Append(response.packet, position, "\x88\x64", ETHERTYPE_LENGTH); position += ETHERTYPE_LENGTH;		
+	// Create reply packet
+	position = 0;
+	// Add destination MAC
+	memcpy(response.packet, ethPacket->sourceMAC, MAC_ADDRESS_LENGTH); position += MAC_ADDRESS_LENGTH;
+	// Add placeholder for source MAC
+	Append(response.packet, position, "\x00\x00\x00\x00\x00\x00", MAC_ADDRESS_LENGTH); position += MAC_ADDRESS_LENGTH;
+	// Add ethertype
+	Append(response.packet, position, "\x88\x64", ETHERTYPE_LENGTH); position += ETHERTYPE_LENGTH;
 	// Add PPPoE header
-        Append(response.packet, position, "\x11", 1); position++;
-        Append(response.packet, position, "\x00", 1); position++;
+	Append(response.packet, position, "\x11", 1); position++;
+	Append(response.packet, position, "\x00", 1); position++;
 	// Add PPPoE SESSION_ID
 	response.packet[position] = session->session_id % 256; position++;
-        response.packet[position] = session->session_id / 256; position++;
+	response.packet[position] = session->session_id / 256; position++;
 	// Add PPPoE payload length 
 	response.packet[position] = htons(totalOptionLength + 2) % 256; position++;
 	response.packet[position] = htons(totalOptionLength + 2) / 256; position++;
@@ -339,7 +285,7 @@ RESPONSE ParseIPCPConfigureRequest(ETHERNET_PACKET *ethPacket, int bytesReceived
 				response.packet[position] = option[i].type; position++;
 				response.packet[position] = option[i].length; position++;
 				for (j = 0; j < (option[i].length - 2); j++)
-					{ response.packet[position] = option[i].value[j]; position++; }
+				{ response.packet[position] = option[i].value[j]; position++; }
 			}
 	}
 	// In case of Configure-Nak, return only Nak'd options
@@ -366,21 +312,19 @@ RESPONSE ParseIPCPConfigureRequest(ETHERNET_PACKET *ethPacket, int bytesReceived
 				response.packet[position] = option[i].type; position++;
 				response.packet[position] = option[i].length; position++;
 				for (j = 0; j < (option[i].length - 2); j++)
-					{ response.packet[position] = option[i].value[j]; position++; }
+				{ response.packet[position] = option[i].value[j]; position++; }
 			}
 	}
-	// In case of Configure-Ack, return all options and add new subscriber to list
+	// In case of Configure-Ack, return all options and add update the subscriber in list
 	else {
 		for (i = 0; i < optionNumber; i++) {
 			response.packet[position] = option[i].type; position++;
 			response.packet[position] = option[i].length; position++;
 			for (j = 0; j < (option[i].length - 2); j++)
-				{ response.packet[position] = option[i].value[j]; position++; }
+			{ response.packet[position] = option[i].value[j]; position++; }
 		}
-		// if the authentication is local, add user to tree
-		if (!radiusAuth) AddNewSubscriber(ethPacket, bytesReceived, 1);
-		// Otherwise, update him
-		else UpdateNewSubscriber(ethPacket, bytesReceived, 1);
+		// Update the authenticated user
+		UpdateNewSubscriber(ethPacket, bytesReceived, 1);
 	}
 
 	response.length = position;
@@ -395,21 +339,21 @@ RESPONSE SendIPCPConfigureRequest(RESPONSE response) {
 	RESPONSE response_additional;
 
 	response_additional.length = 0;
-        response_additional.packet = malloc(PACKET_LENGTH);
-        bzero(response_additional.packet, PACKET_LENGTH);
+	response_additional.packet = malloc(PACKET_LENGTH);
+	bzero(response_additional.packet, PACKET_LENGTH);
 
 	// Copy first 19 bytes to Configure-Request
 	for (i = 0; i < 19; i++)
 		response_additional.packet[i] = response.packet[i];
 	position = 18;
-	
-        // Add payload length (12)
+
+	// Add payload length (12)
 	response_additional.packet[position] = 0x00; position++;
 	response_additional.packet[position] = 0x0c; position++;
 	// Add PPP protocol
-        Append(response_additional.packet, position, "\x80\x21", 2); position += 2;
+	Append(response_additional.packet, position, "\x80\x21", 2); position += 2;
 	// Add code for Configure-Request
-        response_additional.packet[position] = 0x01; position++;
+	response_additional.packet[position] = 0x01; position++;
 	// Add identifier
 	response_additional.packet[position] = rand() / 256; position++;
 	// Add length (10)

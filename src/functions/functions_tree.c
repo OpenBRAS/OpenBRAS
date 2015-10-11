@@ -44,7 +44,7 @@ void SearchTree(SUBSCRIBER **root, LONG_MAC mac, SUBSCRIBER **parent, SUBSCRIBER
 }
 
 // Function which adds a subscriber to the tree
-void AddSubscriber(SUBSCRIBER **tree, LONG_MAC mac, MAC_ADDRESS mac_array, IP_ADDRESS ip, unsigned short session_id, BYTE authenticated) {
+void AddSubscriber(SUBSCRIBER **tree, BYTE username[MAX_USERNAME_LENGTH], LONG_MAC mac, MAC_ADDRESS mac_array, unsigned short session_id, BYTE auth_ppp_identifier, BYTE authenticator[16]) {
 
 	// If the location of the new node is found, add new subscriber to bottom of tree
 	if ((*tree) == NULL) {
@@ -57,41 +57,39 @@ void AddSubscriber(SUBSCRIBER **tree, LONG_MAC mac, MAC_ADDRESS mac_array, IP_AD
 		(*tree)->mac_array[0] = mac_array[0];
 		(*tree)->mac_array[1] = mac_array[1];
 		(*tree)->mac_array[2] = mac_array[2];
-		(*tree)->ip = ip;
+		memcpy((*tree)->username, username, strlen(username));
 		(*tree)->session_id = session_id;
 		(*tree)->echoReceived = FALSE;
 		(*tree)->bytesSent = 0;
 		(*tree)->bytesReceived = 0;
-		(*tree)->authenticated = authenticated;
+
+		(*tree)->authenticated = 0;
+		memcpy((*tree)->aaaAuthenticator, authenticator, 16);
+		(*tree)->auth_ppp_identifier = auth_ppp_identifier;
+
+//		PrintSubscribers(*tree);
 	}
 
 	// Otherwise, search the tree
-	else if (mac < (*tree)->mac) AddSubscriber(&(*tree)->left, mac, mac_array, ip, session_id, authenticated);
+	else if (mac < (*tree)->mac) AddSubscriber(&(*tree)->left, username, mac, mac_array, session_id, auth_ppp_identifier, authenticator);
 
-	else if (mac > (*tree)->mac) AddSubscriber(&(*tree)->right, mac, mac_array, ip, session_id, authenticated);
+	else if (mac > (*tree)->mac) AddSubscriber(&(*tree)->right, username, mac, mac_array, session_id, auth_ppp_identifier, authenticator);
 }
 
 // Function which updates the subscriber to the tree
-void UpdateSubscriber(SUBSCRIBER **tree, LONG_MAC mac, MAC_ADDRESS mac_array, IP_ADDRESS ip, unsigned short session_id, BYTE authenticated) {
+void UpdateSubscriber(SUBSCRIBER **tree, LONG_MAC mac, IP_ADDRESS ip) {
 
 	// Recursively find subscriber in tree und update it
 	if ((*tree) == NULL) return;
 
-	else if (mac < (*tree)->mac) UpdateSubscriber(&((*tree)->left), mac, mac_array, ip, session_id, authenticated);
+	else if (mac < (*tree)->mac) UpdateSubscriber(&((*tree)->left), mac, ip);
 
-	else if (mac > (*tree)->mac) UpdateSubscriber(&((*tree)->right), mac, mac_array, ip, session_id, authenticated);
+	else if (mac > (*tree)->mac) UpdateSubscriber(&((*tree)->right), mac, ip);
 
 	else if (mac == (*tree)->mac) {
 
-		(*tree)->mac_array[0] = mac_array[0];
-		(*tree)->mac_array[1] = mac_array[1];
-		(*tree)->mac_array[2] = mac_array[2];
 		(*tree)->ip = ip;
-		(*tree)->session_id = session_id;
-		(*tree)->echoReceived = FALSE;
-		(*tree)->bytesSent = 0;
-		(*tree)->bytesReceived = 0;
-		(*tree)->authenticated = authenticated;
+		(*tree)->authenticated = 1;
 	}
 }
 
@@ -103,7 +101,7 @@ void PrintSubscribers(SUBSCRIBER *tree) {
 
 		PrintSubscribers(tree->left);
 
-		printf("functions_tree: user with MAC address %lu: IP address %d, session_id 0x%04x\n", tree->mac, tree->ip, ntohs(tree->session_id));		
+		printf("functions_tree: user with MAC address %llu: IP address %d, session_id 0x%04x\n", tree->mac, tree->ip, ntohs(tree->session_id));
 
 		PrintSubscribers(tree->right);
 	}
@@ -234,4 +232,62 @@ void DeleteSubscriber(SUBSCRIBER **tree, LONG_MAC mac) {
 		free (tmp);
 		return;
 	}
+}
+
+// Function which calculates MD5 for comparison with Response Authenticator
+void GetSubscriberMD5(BYTE subResponseAuth[MD5_DIGEST_LENGTH], RADIUS_PACKET *aaaData, SUBSCRIBER *sub) {
+
+	int i, j;
+	BYTE hash[MAX_ARGUMENT_LENGTH];
+	MD5_CTX context;
+
+	// Init MD5
+	MD5_Init(&context);
+	// Create string to be hashed and execute MD5 hashing
+	bzero(hash, MAX_ARGUMENT_LENGTH);
+	hash[0] = aaaData->code;
+	hash[1] = aaaData->identifier;
+	memcpy(hash + 2, (unsigned char *)&aaaData->length, 2);
+	memcpy(hash + 4, sub->aaaAuthenticator, 16);
+	memcpy(hash + 20, aaaData->options, htons(aaaData->length) - RADIUS_HEADER_LENGTH);
+	memcpy(hash + ntohs(aaaData->length), Radius_secret, strlen(Radius_secret));
+	MD5_Update (&context, hash, ntohs(aaaData->length) + strlen(Radius_secret));
+	MD5_Final (subResponseAuth, &context);
+
+	return;
+}
+
+// Function which finds the subscriber to who the Radius message has been sent
+SUBSCRIBER *GetSubscriberRadius(SUBSCRIBER **tree, RADIUS_PACKET *radiusData) {
+
+	SUBSCRIBER *current, *tmp;
+	BYTE subResponseAuth[16];
+
+	if ( (*tree) == NULL) return NULL;
+	current = (*tree);
+	while (current != NULL) {
+		if (current->left == NULL) {
+			GetSubscriberMD5(subResponseAuth, radiusData, current);
+			if (!strncmp(subResponseAuth, radiusData->authenticator, 16)) return current;
+			current = current->right;
+		}
+		else {
+			tmp = current->left;
+			while(tmp->right != NULL && tmp->right != current)
+				tmp = tmp->right;
+			if(tmp->right == NULL) {
+				tmp->right = current;
+				current = current->left;
+			}
+			else {
+				tmp->right = NULL;
+				GetSubscriberMD5(subResponseAuth, radiusData, current);
+				if (!strncmp(subResponseAuth, radiusData->authenticator, 16)) return current;
+				current = current->right;
+			}
+		}
+	}
+
+	// not found
+	return NULL;
 }

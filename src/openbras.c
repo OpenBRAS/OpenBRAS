@@ -28,6 +28,7 @@ along with OpenBRAS. If not, see <http://www.gnu.org/licenses/>.
 #include "functions_tree.h"
 #include "functions_thread.h"
 #include "functions_mysql.h"
+#include "functions_radius.h"
 
 // Declaration of thread for listening of incoming packets and the structure for passing thread arguments
 void *ParseIncomingPackets(void *args);
@@ -39,7 +40,7 @@ typedef struct {
 // Main thread in the program
 int main(int argc, char **argv)
 {
-	int i, j, tmp, rawSocket, ipSocket, bytesReceived;
+	int i, j, tmp, bytesReceived;
 	BYTE packet[PACKET_LENGTH], packet_ip[PACKET_LENGTH];
 	ETHERTYPE ethtype;
 	MAC_ADDRESS sourceMAC;
@@ -70,19 +71,16 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	if (fd == NULL) {
-		perror("Configuration file not found");
+		syslog(LOG_ERR, "Configuration file not found");
 		return -1;
 	}
 	SetExternVariables(fd);
-
-	// Connect to database
-	if (ConnectToDatabase()) return -1;
 
 	// Create and bind a raw socket to the subscriber-facing interface
 	if ((rawSocket = BindRawSocket(subscriberInterface)) == -1) return -1;
 
 	// Create socket for outgoing IP packets
-	if ((ipSocket = CreateIPSocket()) == -1) return -1;
+	if ((ipSocket = CreateIPSocket(outgoingInterface)) == -1) return -1;
 	memset (&sin, 0, sizeof (struct sockaddr_in));
 	sin.sin_family = AF_INET;
 
@@ -98,18 +96,23 @@ int main(int argc, char **argv)
 
 	// If Radius authentications is selected, create and bind a UDP socket to the Radius-facing interface and start Radius-listening thread
 	if (radiusAuth) {
-		if ((radiusSocket = BindUDPSocket(radiusInterface, authPort)) == -1) return -1;
-//		if (pthread_create(&radiusThread, NULL, &ListenToRadius, NULL)) {
-//			syslog(LOG_ERR, "Thread for listening to packets from Radius server not created");
-//			return -1;
-//		}
+		if ((radiusSocket = BindUDPSocket(radiusInterface)) == -1) return -1;
+		if (pthread_create(&radiusThread, NULL, &ListenToRadius, NULL)) {
+			syslog(LOG_ERR, "Thread for listening to packets from Radius server not created");
+			return -1;
+		}
+	}
+	// Otherwise, connect to the database
+	else
+	{
+		ConnectToDatabase();
 	}
 
 	// Initiate semaphores
 	sem_init(&semaphoreTree, 0, 1);
 
 	// Log start of program
-	syslog(LOG_INFO, "Program started");
+	syslog(LOG_INFO, "OpenBRAS started");
 	syslog(LOG_INFO, "Listening for subscribers on %s", subscriberInterface);
 
 	// Listen to all incoming packets
@@ -143,7 +146,7 @@ int main(int argc, char **argv)
 			sem_wait(&semaphoreTree);
 			sub = FindSubscriberMAC(&subscriberList, subscriberMAC);
 			sem_post(&semaphoreTree);
-			if (sub == NULL) continue;
+			if ((sub == NULL) || (sub->authenticated == 0)) continue;
 
 			// Remove Ethernet, PPPoE and PPP headers
 			tmp = bytesReceived - ETH_HEADER_LENGTH - PPPoE_HEADER_LENGTH - PPP_HEADER_LENGTH;
@@ -264,7 +267,7 @@ int main(int argc, char **argv)
 // Function to receive packets from the Internet and forward them to the subscribers
 void *ParseIncomingPackets(void *args) {
 
-	int i, j, rawSocketInternet, bytesReceived;
+	int i, j, bytesReceived;
 	BYTE packet[PACKET_LENGTH];
 	ETHERTYPE ethtype;
 	IP_ADDRESS destinationIP;
@@ -277,13 +280,13 @@ void *ParseIncomingPackets(void *args) {
 	sub = malloc(sizeof(SUBSCRIBER));
 
 	// Get MAC address of the subscriber-facing interface
-	if ((mac = GetMACAddress(subscriberInterface, threadArgs->rawSocket)) == NULL) return;
+	if ((mac = GetMACAddress(subscriberInterface, threadArgs->rawSocket)) == NULL) return NULL;
 
 	// Create and bind a raw socket to the Internet-facing interface
-	if ((rawSocketInternet = BindRawSocket(outgoingInterface)) == -1) return;
+	if ((rawSocketInternet = BindRawSocket(outgoingInterface)) == -1) return NULL;
 
 	// Log start of thread
-	syslog(LOG_INFO, "Listening for incoming packets on %s", outgoingInterface);
+	syslog(LOG_INFO, "Listening for incoming Internet packets on %s", outgoingInterface);
 
 	// Listen to all incoming packets
 	while(1) {

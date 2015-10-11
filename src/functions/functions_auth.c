@@ -67,6 +67,7 @@ RESPONSE ParsePAPAuthenticateRequest(ETHERNET_PACKET *ethPacket, int bytesReceiv
 
 	int i, j = 0, position, auth_ok = 0, totalLength = 0;
 	LONG_MAC mac;
+	MAC_ADDRESS mac_array;
 	BYTE peer_id_length, passwd_length;
 	BYTE *peer_id_username = malloc(MAX_USERNAME_LENGTH);
 	BYTE *peer_id_password = malloc(MAX_PASSWORD_LENGTH);
@@ -87,6 +88,8 @@ RESPONSE ParsePAPAuthenticateRequest(ETHERNET_PACKET *ethPacket, int bytesReceiv
 
 	// Get customer MAC address
 	mac = ((LONG_MAC) ntohs(ethPacket->sourceMAC[0]) << 32) | ((LONG_MAC) ntohs(ethPacket->sourceMAC[1]) << 16) | ((LONG_MAC) ntohs(ethPacket->sourceMAC[2]));
+	// Get MAC address in array format
+	for (i = 0; i < 3; i++) mac_array[i] = ethPacket->sourceMAC[i];
 
 	// Get Peer-ID Username
 	peer_id_length = session->options[0];
@@ -148,7 +151,14 @@ RESPONSE ParsePAPAuthenticateRequest(ETHERNET_PACKET *ethPacket, int bytesReceiv
 		}
 		// Add data
 		if (auth_ok)
-		{ response.packet[position] = 0x00; position++; }
+		{
+			response.packet[position] = 0x00; position++;
+
+			// Add subscriber to binary tree
+			sem_wait(&semaphoreTree);
+			AddSubscriber(&subscriberList, peer_id_username, mac, mac_array, session->session_id, session->ppp_identifier, 0);
+			sem_post(&semaphoreTree);
+		}
 		else {
 			Append(response.packet, position, "\x4e\x4f\x4b", 3); position += 3;
 		}
@@ -220,6 +230,11 @@ RESPONSE ParsePAPAuthenticateRequest(ETHERNET_PACKET *ethPacket, int bytesReceiv
 	if ((sendto(radiusSocket, response.packet, response.length, 0, (struct sockaddr *) &radiusAddr, sizeof(radiusAddr))) == -1) {
 		syslog(LOG_NOTICE, "Error sending request to Radius");
 	}
+
+	// Add subscriber to binary tree
+	sem_wait(&semaphoreTree);
+	AddSubscriber(&subscriberList, peer_id_username, mac, mac_array, session->session_id, session->ppp_identifier, requestAuth);
+	sem_post(&semaphoreTree);
 
 	free(peer_id_username);
 	free(peer_id_password);
