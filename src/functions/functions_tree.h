@@ -10,5 +10,6 @@ SUBSCRIBER *FindSubscriberIP(SUBSCRIBER **tree, IP_ADDRESS ip);
 void DeleteSubscriber(SUBSCRIBER **tree, LONG_MAC mac);
 void SetSubscriberThreadID(SUBSCRIBER **tree, LONG_MAC mac, pthread_t threadID);
 SUBSCRIBER *GetSubscriberRadius(SUBSCRIBER **tree, RADIUS_PACKET *radiusData);
+void *RefreshSubscriberTree(void *args);
 
 #endif

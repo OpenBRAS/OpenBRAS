@@ -215,6 +215,7 @@ struct subscriber_definition {
 
 	struct subscriber_definition *left;
 	struct subscriber_definition *right;
+	time_t creationTime;
 };
 typedef struct subscriber_definition SUBSCRIBER;
 

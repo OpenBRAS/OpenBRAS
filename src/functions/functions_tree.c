@@ -52,6 +52,7 @@ void AddSubscriber(SUBSCRIBER **tree, BYTE username[MAX_USERNAME_LENGTH], LONG_M
 		*tree = malloc (sizeof(SUBSCRIBER));
 		(*tree)->right = NULL;
 		(*tree)->left = NULL;
+		(*tree)->creationTime = time(NULL);
 
 		(*tree)->mac = mac;
 		(*tree)->mac_array[0] = mac_array[0];
@@ -67,7 +68,7 @@ void AddSubscriber(SUBSCRIBER **tree, BYTE username[MAX_USERNAME_LENGTH], LONG_M
 		memcpy((*tree)->aaaAuthenticator, authenticator, 16);
 		(*tree)->auth_ppp_identifier = auth_ppp_identifier;
 
-//		PrintSubscribers(*tree);
+		//		PrintSubscribers(*tree);
 	}
 
 	// Otherwise, search the tree
@@ -290,4 +291,46 @@ SUBSCRIBER *GetSubscriberRadius(SUBSCRIBER **tree, RADIUS_PACKET *radiusData) {
 
 	// not found
 	return NULL;
+}
+
+// Function that goes through the subscriber tree and deletes users that have not been authenticated for more than 20 seconds
+void *RefreshSubscriberTree(void *args) {
+
+	SUBSCRIBER *current, *tmp;
+	time_t currentTime;
+
+	while (1) {
+
+		sleep(1);
+		current = subscriberList;
+		if (current == NULL) continue;
+		currentTime = time(NULL);
+
+		sem_wait(&semaphoreTree);
+		while (current != NULL) {
+			if (current->left == NULL) {
+				if (difftime(currentTime, tmp->creationTime) > 20) {
+					DeleteSubscriber(&subscriberList, tmp->mac);
+				}
+				current = current->right;
+			}
+			else {
+				tmp = current->left;
+				while(tmp->right != NULL && tmp->right != current)
+					tmp = tmp->right;
+				if(tmp->right == NULL) {
+					tmp->right = current;
+					current = current->left;
+				}
+				else {
+					tmp->right = NULL;
+					if (difftime(currentTime, tmp->creationTime) > 20) {
+						DeleteSubscriber(&subscriberList, tmp->mac);
+					}
+					current = current->right;
+				}
+			}
+		}
+		sem_post(&semaphoreTree);
+	}
 }

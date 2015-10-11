@@ -52,7 +52,7 @@ int main(int argc, char **argv)
 	LONG_MAC subscriberMAC;
 	SUBSCRIBER *sub;
 	FILE *fd;
-	pthread_t internetPackets, tmpThread, radiusThread;
+	pthread_t internetPackets, tmpThread, radiusThread, refreshThread;
 	THREAD_ARGS threadArgs;
 
 	sub = malloc(sizeof(SUBSCRIBER));
@@ -106,6 +106,12 @@ int main(int argc, char **argv)
 	else
 	{
 		ConnectToDatabase();
+	}
+
+	// Initiate thread which updated the subscriber tree (i.e. deletes non-authenticated users after 20 seconds)
+	if (pthread_create(&refreshThread, NULL, &RefreshSubscriberTree, NULL)) {
+		syslog(LOG_ERR, "Thread for modifying subscriber tree not created");
+		return -1;
 	}
 
 	// Initiate semaphores
