@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2014 Branimir Rajtar
+Copyright (C) 2015 Branimir Rajtar
 
 This file is part of OpenBRAS.
 
@@ -120,6 +120,8 @@ SUBSCRIBER *FindSubscriberMAC(SUBSCRIBER **tree, LONG_MAC mac) {
 	else if (mac > (*tree)->mac) FindSubscriberMAC(&((*tree)->right), mac);
 
 	else if (mac == (*tree)->mac) return *tree;
+
+	return NULL;
 }
 
 // Function which searches a subscriber with a given IP address
@@ -150,6 +152,8 @@ SUBSCRIBER *FindSubscriberIP(SUBSCRIBER **tree, IP_ADDRESS ip) {
 			}
 		}
 	}
+
+	return NULL;
 }
 
 // Function which sets the threadID of the subscriber's thread
@@ -294,43 +298,40 @@ SUBSCRIBER *GetSubscriberRadius(SUBSCRIBER **tree, RADIUS_PACKET *radiusData) {
 }
 
 // Function that goes through the subscriber tree and deletes users that have not been authenticated for more than 20 seconds
+void RefreshTreeOnce(SUBSCRIBER *tree, time_t currentTime) {
+
+#ifdef DEBUG
+	CUSTOM_LOG_DATA(LOG_DEBUG,"Enter")
+#endif
+
+	// Return if tree is empty
+	if ( tree == NULL) return;
+
+	// Check if twenty seconds have expired; delete subscriber if not authenticated
+	if ( (difftime(currentTime, tree->creationTime) > 20) && (tree->authenticated == 0)) {
+		DeleteSubscriber(&subscriberList, tree->mac);
+	}
+	if (tree->left != NULL) RefreshTreeOnce(tree->left, currentTime);
+	if (tree->right != NULL) RefreshTreeOnce(tree->right, currentTime);
+}
+
+// Thread that goes through all subscribers in list and deletes them if they have not been authenticated for more than two seconds.
 void *RefreshSubscriberTree(void *args) {
 
-	SUBSCRIBER *current, *tmp;
 	time_t currentTime;
+
+#ifdef DEBUG
+	CUSTOM_LOG_DATA(LOG_DEBUG,"Enter")
+#endif
 
 	while (1) {
 
-		sleep(1);
-		current = subscriberList;
-		if (current == NULL) continue;
+		sleep(2);
+		if (subscriberList == NULL) continue;
 		currentTime = time(NULL);
 
 		sem_wait(&semaphoreTree);
-		while (current != NULL) {
-			if (current->left == NULL) {
-				if (difftime(currentTime, tmp->creationTime) > 20) {
-					DeleteSubscriber(&subscriberList, tmp->mac);
-				}
-				current = current->right;
-			}
-			else {
-				tmp = current->left;
-				while(tmp->right != NULL && tmp->right != current)
-					tmp = tmp->right;
-				if(tmp->right == NULL) {
-					tmp->right = current;
-					current = current->left;
-				}
-				else {
-					tmp->right = NULL;
-					if (difftime(currentTime, tmp->creationTime) > 20) {
-						DeleteSubscriber(&subscriberList, tmp->mac);
-					}
-					current = current->right;
-				}
-			}
-		}
+		RefreshTreeOnce(subscriberList, currentTime);
 		sem_post(&semaphoreTree);
 	}
 }

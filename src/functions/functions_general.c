@@ -226,20 +226,20 @@ BYTE *GetMACAddress(char *interface, int rawSocket) {
 // Function which creates a raw socket and binds it to a selected interface
 // returns: raw socket
 int BindRawSocket(char *interface) {
-	int rawSocket;
+
 	struct sockaddr_ll sll;
 	struct ifreq ifr;
 
 	// Create raw socket
 	if ((rawSocket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) {
-		syslog(LOG_ERR, "Raw Socket not created on interface %s\n", interface);
+		syslog(LOG_ERR, "Raw Socket not created on interface %s: %s\n", interface, strerror(errno));
 		return -1;
 	}
 
 	// Get interface based on command line argument
 	strncpy((char *)ifr.ifr_name, interface, IFNAMSIZ);
 	if((ioctl(rawSocket, SIOCGIFINDEX, &ifr)) == -1) {
-		syslog(LOG_ERR, "Interface %s not valid\n", interface);
+		syslog(LOG_ERR, "Raw interface %s not valid: %s\n", interface, strerror(errno));
 		return -1;
 	}
 
@@ -255,24 +255,56 @@ int BindRawSocket(char *interface) {
 	return rawSocket;
 }
 
+// Function which creates a raw socket and binds it to a selected Internet-facing interface
+// returns: raw socket
+int BindRawSocketInternet(char *interface) {
+
+	struct sockaddr_ll sll;
+	struct ifreq ifr;
+
+	// Create raw socket
+	if ((rawSocketInternet = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) {
+		syslog(LOG_ERR, "Raw Socket not created on interface %s: %s\n", interface, strerror(errno));
+		return -1;
+	}
+
+	// Get interface based on command line argument
+	strncpy((char *)ifr.ifr_name, interface, IFNAMSIZ);
+	if((ioctl(rawSocketInternet, SIOCGIFINDEX, &ifr)) == -1) {
+		syslog(LOG_ERR, "Raw interface %s not valid: %s\n", interface, strerror(errno));
+		return -1;
+	}
+
+	// Bind to raw socket
+	sll.sll_family = AF_PACKET;
+	sll.sll_ifindex = ifr.ifr_ifindex;
+	sll.sll_protocol = htons(ETH_P_ALL);
+	if (bind(rawSocketInternet, (struct sockaddr *) &sll, sizeof(struct sockaddr_ll)) == -1) {
+		syslog(LOG_ERR, "Bind to raw interface %s not valid\n", interface);
+		return -1;
+	}
+
+	return rawSocketInternet;
+}
+
 // Function which creates an IP socket
 // returns: IP socket
 int CreateIPSocket(char *interface) {
 
-	int ipSocket, one = 1;
+	int one = 1;
 	struct ifreq ifr;
+
+	// Create socket for IP packets
+	if ((ipSocket = socket (AF_INET, SOCK_RAW, IPPROTO_RAW)) == -1) {
+		syslog(LOG_ERR, "IP Socket not created");
+		return -1;
+	}
 
 	// Get interface based on command line argument
 	ifr.ifr_addr.sa_family = AF_INET;
 	strncpy((char *)ifr.ifr_name, interface, IFNAMSIZ);
 	if((ioctl(ipSocket, SIOCGIFINDEX, &ifr)) == -1) {
-		syslog(LOG_ERR, "Interface %s not valid: %s", interface, strerror(errno));
-		return -1;
-	}
-
-	// Create socket for IP packets
-	if ((ipSocket = socket (AF_INET, SOCK_RAW, IPPROTO_RAW)) == -1) {
-		syslog(LOG_ERR, "IP Socket not created");
+		syslog(LOG_ERR, "IP interface %s not valid: %s", interface, strerror(errno));
 		return -1;
 	}
 
@@ -315,14 +347,14 @@ int BindUDPSocket(char *interface) {
 	ifr.ifr_addr.sa_family = AF_INET;
 	strncpy((char *)ifr.ifr_name, interface, IFNAMSIZ);
 	if((ioctl(udpSocket, SIOCGIFINDEX, &ifr)) == -1) {
-		syslog(LOG_ERR, "Interface not valid");
+		syslog(LOG_ERR, "UDP interface %s not valid: %s", interface, strerror(errno));
 		return -1;
 	}
 
 	// Get IP address of interface
 	strncpy((char *)ifr.ifr_name, interface, IFNAMSIZ);
 	if((ioctl(udpSocket, SIOCGIFADDR, &ifr)) == -1) {
-		syslog(LOG_ERR, "Interface not valid");
+		syslog(LOG_ERR, "UDP interface %s not valid: %s", interface, strerror(errno));
 		return -1;
 	}
 
@@ -330,7 +362,7 @@ int BindUDPSocket(char *interface) {
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr = ((struct sockaddr_in *) &ifr.ifr_addr)->sin_addr.s_addr;
 	if (bind(udpSocket, (struct sockaddr *) &sin, sizeof(sin)) == -1) {
-		syslog(LOG_ERR, "Bind to UDP interface not valid");
+		syslog(LOG_ERR, "Bind to UDP interface %s not valid: %s", interface, strerror(errno));
 		return -1;
 	}
 

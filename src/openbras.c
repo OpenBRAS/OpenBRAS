@@ -77,10 +77,10 @@ int main(int argc, char **argv)
 	SetExternVariables(fd);
 
 	// Create and bind a raw socket to the subscriber-facing interface
-	if ((rawSocket = BindRawSocket(subscriberInterface)) == -1) return -1;
+	if ((BindRawSocket(subscriberInterface)) == -1) return -1;
 
 	// Create socket for outgoing IP packets
-	if ((ipSocket = CreateIPSocket(outgoingInterface)) == -1) return -1;
+	if ((CreateIPSocket(outgoingInterface)) == -1) return -1;
 	memset (&sin, 0, sizeof (struct sockaddr_in));
 	sin.sin_family = AF_INET;
 
@@ -289,7 +289,7 @@ void *ParseIncomingPackets(void *args) {
 	if ((mac = GetMACAddress(subscriberInterface, threadArgs->rawSocket)) == NULL) return NULL;
 
 	// Create and bind a raw socket to the Internet-facing interface
-	if ((rawSocketInternet = BindRawSocket(outgoingInterface)) == -1) return NULL;
+	if ((BindRawSocketInternet(outgoingInterface)) == -1) return NULL;
 
 	// Log start of thread
 	syslog(LOG_INFO, "Listening for incoming Internet packets on %s", outgoingInterface);

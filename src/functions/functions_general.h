@@ -6,6 +6,7 @@ int ParseConfigurationFile(FILE *fd, CONF_PARAMETER *configuration);
 void Append(char *dst, int dstLen, char *src, int srcLen);
 BYTE *GetMACAddress(char *interface, int rawSocket);
 int BindRawSocket(char *interface);
+int BindRawSocketInternet(char *interface);
 int CreateIPSocket(char *interface);
 
 #endif
